@@ -49,4 +49,12 @@ public class NewsArticle {
     public void setUrl(String url) {
         this.url = url;
     }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
+    }
 }
