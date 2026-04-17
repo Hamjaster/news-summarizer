@@ -16,15 +16,24 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * API layer for external news provider integration.
+ *
+ * This class is responsible for converting internal query inputs
+ * into external API calls and mapping results into NewsArticle objects.
+ */
 public class ApiCall {
-    // Calls the NewsAPI (https://newsapi.org) `everything` endpoint and maps the response
-    // to a List<NewsArticle>. The API key must be provided via the NEWS_API_KEY environment variable.
+    // Calls the NewsAPI (https://newsapi.org) `everything` endpoint and maps the
+    // response
+    // to a List<NewsArticle>. The API key must be provided via the NEWS_API_KEY
+    // environment variable.
     public List<NewsArticle> fetchNews(String query, DateRange dateRange) {
         List<NewsArticle> articles = new ArrayList<>();
 
         String apiKey = System.getenv("NEWS_API_KEY");
         if (apiKey == null || apiKey.isEmpty()) {
-            throw new IllegalStateException("NEWS_API_KEY environment variable is not set. Please set it to your NewsAPI key.");
+            throw new IllegalStateException(
+                    "NEWS_API_KEY environment variable is not set. Please set it to your NewsAPI key.");
         }
 
         try {
@@ -33,10 +42,12 @@ public class ApiCall {
 
             if (dateRange != null) {
                 if (dateRange.getStartDate() != null) {
-                    sb.append("&from=").append(URLEncoder.encode(dateRange.getStartDate().toString(), StandardCharsets.UTF_8));
+                    sb.append("&from=")
+                            .append(URLEncoder.encode(dateRange.getStartDate().toString(), StandardCharsets.UTF_8));
                 }
                 if (dateRange.getEndDate() != null) {
-                    sb.append("&to=").append(URLEncoder.encode(dateRange.getEndDate().toString(), StandardCharsets.UTF_8));
+                    sb.append("&to=")
+                            .append(URLEncoder.encode(dateRange.getEndDate().toString(), StandardCharsets.UTF_8));
                 }
             }
 
