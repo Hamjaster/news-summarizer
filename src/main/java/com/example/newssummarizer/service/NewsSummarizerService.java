@@ -1,5 +1,7 @@
 package com.example.newssummarizer.service;
 
+import java.util.List;
+
 import com.example.newssummarizer.api.ApiCall;
 import com.example.newssummarizer.llm.LlmCall;
 import com.example.newssummarizer.model.NewsQuery;

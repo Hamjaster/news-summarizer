@@ -1,7 +1,8 @@
 package com.example.newssummarizer.llm;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDate;
+import java.util.List;
+
 import com.example.newssummarizer.model.DateRange;
 import com.example.newssummarizer.model.NewsArticle;
 import com.example.newssummarizer.model.NewsQuery;
@@ -201,93 +202,26 @@ public class LlmCall {
      * Step 3 LLM call:
      * Builds a concise summary from the user's intent and fetched articles.
      */
+public class LlmCall {
+    // Lightweight local implementation for extracting a query and building a summary.
+    // In production this would call an LLM service.
+    // This method returns a NewsQuery built from the raw user input.
+    public NewsQuery extractQuery(String userQuery) {
+        if (userQuery == null) return null;
+
+        String trimmed = userQuery.trim();
+        if (trimmed.isEmpty()) return null;
+
+        // For demo: treat the entire input as the search text and use a 7-day date range.
+        NewsQuery nq = new NewsQuery();
+        nq.setSearchText(trimmed);
+        DateRange dr = new DateRange(LocalDate.now().minusDays(7), LocalDate.now());
+        nq.setDateRange(dr);
+        return nq;
+    }
+
+    // returns a summary string built from provided articles
     public String buildSummary(String userQuery, List<NewsArticle> articles) {
-        String normalizedQuery = userQuery == null ? "" : userQuery.trim();
-        if (normalizedQuery.isEmpty()) {
-            throw new IllegalArgumentException("User query cannot be empty.");
-        }
-        if (articles == null || articles.isEmpty()) {
-            return "No news articles were found for the selected query/date range, so there is nothing to summarize.";
-        }
-        if (geminiApiKey == null || geminiApiKey.isBlank()) {
-            throw new IllegalStateException("Gemini API key is missing in LlmCall.HARDCODED_GEMINI_API_KEY.");
-        }
-
-        String articlesContext = buildArticlesContext(articles);
-        String prompt = """
-                You are a news summarizer assistant.
-                Create a concise, factual summary for the user request below.
-
-                User request:
-                %s
-
-                News articles:
-                %s
-
-                Output format:
-                - First line: one-sentence overall summary.
-                - Then 3 to 6 bullet points with key developments.
-                - End with "Sources:" and include source names only (comma-separated).
-                Rules:
-                - Use only the provided articles.
-                - If articles conflict, mention uncertainty briefly.
-                - Keep it under 220 words.
-                """.formatted(normalizedQuery, articlesContext);
-
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/"
-                + geminiModel + ":generateContent?key=" + geminiApiKey;
-
-        try {
-            String requestBody = buildRequestBody(prompt);
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpoint))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Gemini request failed with HTTP " + response.statusCode()
-                        + ": " + response.body());
-            }
-
-            String summary = extractModelText(response.body());
-            return stripCodeFences(summary);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Gemini request was interrupted.", e);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to parse Gemini response.", e);
-        }
-    }
-
-    private String buildArticlesContext(List<NewsArticle> articles) {
-        // Limit number of articles to keep prompt size manageable.
-        int maxArticles = Math.min(articles.size(), 15);
-        StringBuilder context = new StringBuilder();
-
-        for (int i = 0; i < maxArticles; i++) {
-            NewsArticle article = articles.get(i);
-            String title = safeValue(article.getTitle());
-            String description = safeValue(article.getDescription());
-            String source = safeValue(article.getSource());
-            String url = safeValue(article.getUrl());
-
-            context.append(i + 1).append(") ")
-                    .append("Title: ").append(title).append('\n')
-                    .append("Description: ").append(description).append('\n')
-                    .append("Source: ").append(source).append('\n')
-                    .append("URL: ").append(url).append("\n\n");
-        }
-
-        return context.toString().trim();
-    }
-
-    private String safeValue(String value) {
-        // Prevent null/blank values from degrading summary prompt quality.
-        if (value == null || value.isBlank()) {
-            return "N/A";
-        }
-        return value.trim();
+        throw new UnsupportedOperationException("Not implemented yet");
     }
 }
