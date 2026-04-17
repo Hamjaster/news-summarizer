@@ -2,9 +2,15 @@ package com.example.newssummarizer.model;
 
 import java.time.LocalDate;
 
+/**
+ * Represents a date interval used for filtering news queries.
+ */
 public class DateRange {
 
+    // Inclusive lower bound for the article publish date.
     private LocalDate startDate;
+
+    // Inclusive upper bound for the article publish date.
     private LocalDate endDate;
 
     public DateRange() {

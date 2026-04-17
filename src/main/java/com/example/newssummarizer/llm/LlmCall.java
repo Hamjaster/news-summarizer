@@ -18,9 +18,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Handles all Gemini LLM interactions for this project.
+ *
+ * Responsibilities:
+ * - convert user query text into structured NewsQuery (Step 1)
+ * - generate final human-readable summary from article list (Step 3)
+ */
 public class LlmCall {
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Keep this value private. Current setup intentionally uses a hardcoded key.
     private static final String HARDCODED_GEMINI_API_KEY = "AQ.Ab8RN6LvSOlrZftFazxksqcsT-UeqBbjB52yWX17E5sMCp4ygQ";
+    // Default model used for both extraction and summarization.
     private static final String HARDCODED_GEMINI_MODEL = "gemini-2.0-flash";
 
     private final HttpClient httpClient;
@@ -37,13 +46,13 @@ public class LlmCall {
         this.geminiModel = geminiModel;
     }
 
-    // this should return a JSON that looks like this:
-    // {
-    // "searchText": "some search text",
-    // "dateRange": {
-    // "startDate": "2024-01-01",
-    // "endDate": "2024-01-31"
-    // }
+    /**
+     * Step 1 LLM call:
+     * Converts free-text user request into NewsQuery with fields:
+     * - searchText
+     * - dateRange.startDate
+     * - dateRange.endDate
+     */
     public NewsQuery extractQuery(String userQuery) {
         String normalized = userQuery == null ? "" : userQuery.trim();
         if (normalized.isEmpty()) {
@@ -120,6 +129,7 @@ public class LlmCall {
     }
 
     private String buildRequestBody(String prompt) throws IOException {
+        // Gemini request structure: contents -> parts -> text
         Map<String, Object> part = new HashMap<>();
         part.put("text", prompt);
 
@@ -133,6 +143,7 @@ public class LlmCall {
     }
 
     private String extractModelText(String responseBody) throws IOException {
+        // Reads first candidate text from Gemini response JSON.
         JsonNode root = MAPPER.readTree(responseBody);
         JsonNode candidates = root.path("candidates");
         if (!candidates.isArray() || candidates.isEmpty()) {
@@ -153,6 +164,7 @@ public class LlmCall {
     }
 
     private String stripCodeFences(String text) {
+        // Some model responses include ```json ... ``` wrappers; remove them safely.
         String trimmed = text.trim();
         if (!trimmed.startsWith("```")) {
             return trimmed;
@@ -173,6 +185,7 @@ public class LlmCall {
     }
 
     private LocalDate parseDateOrDefault(String value, LocalDate fallback) {
+        // Uses fallback when model returns missing or invalid date text.
         if (value == null || value.isBlank()) {
             return fallback;
         }
@@ -184,8 +197,97 @@ public class LlmCall {
         }
     }
 
-    // returns a summary string
+    /**
+     * Step 3 LLM call:
+     * Builds a concise summary from the user's intent and fetched articles.
+     */
     public String buildSummary(String userQuery, List<NewsArticle> articles) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        String normalizedQuery = userQuery == null ? "" : userQuery.trim();
+        if (normalizedQuery.isEmpty()) {
+            throw new IllegalArgumentException("User query cannot be empty.");
+        }
+        if (articles == null || articles.isEmpty()) {
+            return "No news articles were found for the selected query/date range, so there is nothing to summarize.";
+        }
+        if (geminiApiKey == null || geminiApiKey.isBlank()) {
+            throw new IllegalStateException("Gemini API key is missing in LlmCall.HARDCODED_GEMINI_API_KEY.");
+        }
+
+        String articlesContext = buildArticlesContext(articles);
+        String prompt = """
+                You are a news summarizer assistant.
+                Create a concise, factual summary for the user request below.
+
+                User request:
+                %s
+
+                News articles:
+                %s
+
+                Output format:
+                - First line: one-sentence overall summary.
+                - Then 3 to 6 bullet points with key developments.
+                - End with "Sources:" and include source names only (comma-separated).
+                Rules:
+                - Use only the provided articles.
+                - If articles conflict, mention uncertainty briefly.
+                - Keep it under 220 words.
+                """.formatted(normalizedQuery, articlesContext);
+
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/"
+                + geminiModel + ":generateContent?key=" + geminiApiKey;
+
+        try {
+            String requestBody = buildRequestBody(prompt);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Gemini request failed with HTTP " + response.statusCode()
+                        + ": " + response.body());
+            }
+
+            String summary = extractModelText(response.body());
+            return stripCodeFences(summary);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Gemini request was interrupted.", e);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to parse Gemini response.", e);
+        }
+    }
+
+    private String buildArticlesContext(List<NewsArticle> articles) {
+        // Limit number of articles to keep prompt size manageable.
+        int maxArticles = Math.min(articles.size(), 15);
+        StringBuilder context = new StringBuilder();
+
+        for (int i = 0; i < maxArticles; i++) {
+            NewsArticle article = articles.get(i);
+            String title = safeValue(article.getTitle());
+            String description = safeValue(article.getDescription());
+            String source = safeValue(article.getSource());
+            String url = safeValue(article.getUrl());
+
+            context.append(i + 1).append(") ")
+                    .append("Title: ").append(title).append('\n')
+                    .append("Description: ").append(description).append('\n')
+                    .append("Source: ").append(source).append('\n')
+                    .append("URL: ").append(url).append("\n\n");
+        }
+
+        return context.toString().trim();
+    }
+
+    private String safeValue(String value) {
+        // Prevent null/blank values from degrading summary prompt quality.
+        if (value == null || value.isBlank()) {
+            return "N/A";
+        }
+        return value.trim();
     }
 }

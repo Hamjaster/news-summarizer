@@ -7,6 +7,15 @@ import com.example.newssummarizer.model.NewsQuery;
 import java.time.format.DateTimeFormatter;
 import java.util.Scanner;
 
+/**
+ * Service layer that coordinates the full news summarization pipeline.
+ *
+ * File interaction flow:
+ * - NewsSummarizerApplication -> calls this class.
+ * - This class -> calls LlmCall for query extraction and summary generation.
+ * - This class -> calls ApiCall to fetch news articles (Step 2, pending team
+ * integration).
+ */
 public class NewsSummarizerService {
 
     private final ApiCall apiCall;
@@ -17,14 +26,22 @@ public class NewsSummarizerService {
         this.llmCall = new LlmCall();
     }
 
+    /**
+     * Step 1:
+     * - reads the user request from terminal,
+     * - asks LLM to extract structured query and date range,
+     * - prints extracted values.
+     */
     public NewsQuery runStep1ExtractQuery() {
         Scanner scanner = new Scanner(System.in);
         System.out.print("Enter your news request: ");
         String userInput = scanner.nextLine();
 
+        // LlmCall converts free-text into NewsQuery(searchText + dateRange).
         NewsQuery query = llmCall.extractQuery(userInput);
         DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE;
 
+        // Print structured output so user can verify extracted values.
         System.out.println("\nExtracted Query JSON (object form):");
         System.out.println("searchText: " + query.getSearchText());
         System.out.println("dateRange.startDate: " + query.getDateRange().getStartDate().format(formatter));
@@ -33,23 +50,9 @@ public class NewsSummarizerService {
         return query;
     }
 
-    // 1)
-    // take input from user here!
-    // call llmCall.extractQuery to get the query and date range
-    // NOW, we have the JSON :
-    // {
-    // "searchText": "some search text",
-    // "dateRange": {
-    // "startDate": "2024-01-01",
-    // "endDate": "2024-01-31"
-    // }
-
-    // 2)
-    // call apiCall.fetchNews with the searchText and dateRange to get the news
-    // articles
-    // NOW, we have NewsArticle[]
-
-    // 3)
-    // call LLMcall.buildSummary with passing the NewsArticle[] + the system prompt'
-    // print that summary string on the termincal
+    // Pipeline plan for final flow:
+    // Step 1: runStep1ExtractQuery() -> gets NewsQuery from user text via LLM.
+    // Step 2: apiCall.fetchNews(searchText, dateRange) -> returns NewsArticle list.
+    // Step 3: llmCall.buildSummary(userQuery, articles) -> returns final summary
+    // text.
 }

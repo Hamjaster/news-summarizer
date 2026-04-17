@@ -1,8 +1,17 @@
 package com.example.newssummarizer.model;
 
+/**
+ * Structured query produced by LLM from user input.
+ *
+ * Contains both search text and date filters so downstream API calls
+ * can run without additional NLP parsing.
+ */
 public class NewsQuery {
 
+    // Search phrase to send to the news provider API.
     private String searchText;
+
+    // Date limits for filtering the requested news window.
     private DateRange dateRange;
 
     public NewsQuery() {

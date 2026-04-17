@@ -1,11 +1,26 @@
 package com.example.newssummarizer.model;
 
+/**
+ * Normalized article object used throughout the app.
+ *
+ * This object is created from external API responses and later passed
+ * to LLM summarization.
+ */
 public class NewsArticle {
 
+    // Headline of the article.
     private String title;
+
+    // Short description/snippet.
     private String description;
+
+    // Publisher or source name.
     private String source;
+
+    // Link to full article.
     private String url;
+
+    // Optional long-form content (if provided by API).
     private String content;
 
     public NewsArticle() {
