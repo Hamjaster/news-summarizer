@@ -1,0 +1,19 @@
+Running demo summarizer for input: 'my query'
+
+--- Summary ---
+Summary for 'my query':
+Found 3 articles.
+
+1. my query — breakthrough reported
+   A new development related to 'my query' was reported (from 2026-04-09 to 2026-04-16)
+   Source: DemoNews | URL: https://example.com/article1
+
+2. Experts weigh in on my query
+   Analysts discuss implications of 'my query' (from 2026-04-09 to 2026-04-16)
+   Source: DemoTimes | URL: https://example.com/article2
+
+3. my query market watch
+   Market movements and reactions related to 'my query' (from 2026-04-09 to 2026-04-16)
+   Source: DemoPost | URL: https://example.com/article3
+
+End of summary.
