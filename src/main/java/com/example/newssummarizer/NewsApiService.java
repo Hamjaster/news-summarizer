@@ -18,11 +18,16 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 public class NewsApiService {
 
     private static final String NEWS_API_KEY_ENV = "NEWS_API_KEY";
     private static final String NEWS_API_BASE = "https://newsapi.org/v2/everything";
+    private static final String RED = "\u001B[31m";
+    private static final String BOLD = "\u001B[1m";
+    private static final String RESET = "\u001B[0m";
 
     private final HttpClient httpClient;
     private final String newsApiKey;
@@ -85,6 +90,8 @@ public class NewsApiService {
                     .timeout(Duration.ofSeconds(45))
                     .GET()
                     .build();
+
+                TerminalUtils.showLoading("Please wait");
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
@@ -186,32 +193,12 @@ public class NewsApiService {
      * @return Nothing. This method only prints output.
      */
     private void printErrorBox(String... messageLines) {
-        int contentWidth = 62;
-        for (String messageLine : messageLines) {
-            if (messageLine != null && messageLine.length() > contentWidth) {
-                contentWidth = messageLine.length();
+        List<String> lines = new ArrayList<>();
+        if (messageLines != null) {
+            for (String messageLine : messageLines) {
+                lines.add(messageLine == null ? "" : messageLine);
             }
         }
-
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String messageLine : messageLines) {
-            String safeMessageLine = messageLine == null ? "" : messageLine;
-            System.out.println("\u2551 " + padRight(safeMessageLine, contentWidth) + " \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
-    }
-
-    /**
-     * Pads text with spaces on the right for aligned box output.
-     *
-     * @param value The original text value.
-     * @param width The desired line width.
-     * @return A right-padded string.
-     */
-    private String padRight(String value, int width) {
-        if (value.length() >= width) {
-            return value;
-        }
-        return value + " ".repeat(width - value.length());
+        TerminalUtils.printSimpleBox(lines, RED + BOLD, RED, RESET);
     }
 }

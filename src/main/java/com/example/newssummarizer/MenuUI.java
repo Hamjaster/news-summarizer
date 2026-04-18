@@ -1,13 +1,10 @@
 /*
  * This file controls everything the user sees in the terminal.
- * It shows the main menu, takes user input, and sends them to either the News Summarizer or the Text Summarizer.
- * It validates dates and keeps the user flow clean and friendly.
- * It prints clear boxes for menus, summaries, and errors.
+ * It renders the main menu, handles user input, and coordinates all user-facing flows.
+ * It keeps spacing, colors, and summary output consistent across the application.
  */
 package com.example.newssummarizer;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.Month;
@@ -15,18 +12,26 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MenuUI {
 
-    private static final int SUMMARY_TEXT_WIDTH = 40;
+    private static final String CYAN = "\u001B[36m";
+    private static final String WHITE = "\u001B[37m";
+    private static final String YELLOW = "\u001B[33m";
+    private static final String RED = "\u001B[31m";
+    private static final String GREEN = "\u001B[32m";
+    private static final String RESET = "\u001B[0m";
+    private static final String BOLD = "\u001B[1m";
+
     private static final DateTimeFormatter OUTPUT_DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final List<DateTimeFormatter> SUPPORTED_DATE_FORMATS = createDateFormatters();
     private static final String DATE_TOKEN_REGEX = "(?:\\d{1,2}(?:st|nd|rd|th)?\\s+[a-zA-Z]+\\s+\\d{4}|[a-zA-Z]+\\s+\\d{1,2}(?:st|nd|rd|th)?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{1,2}-\\d{1,2})";
@@ -36,13 +41,15 @@ public class MenuUI {
     private static final Pattern DATE_TOKEN_IN_TEXT_PATTERN = Pattern.compile("(?i)\\b" + DATE_TOKEN_REGEX + "\\b");
     private static final Pattern LAST_X_DAYS_PATTERN = Pattern.compile("(?i)\\blast\\s+(\\d{1,2})\\s+days\\b");
     private static final String GEMINI_FALLBACK_RESPONSE = "Could not complete request. Please try again.";
+    private static final String NO_ARTICLES_MESSAGE = "No articles found for this query and date range.";
 
     private final Scanner scanner;
     private final GeminiService geminiService;
     private final NewsApiService newsApiService;
+    private final MorningBriefing morningBriefing;
 
     /**
-     * Creates the menu UI with the services needed for all user actions.
+     * Creates the menu UI with all shared services used by user flows.
      *
      * @param none This constructor does not receive arguments.
      * @return A ready MenuUI instance.
@@ -51,21 +58,24 @@ public class MenuUI {
         this.scanner = new Scanner(System.in);
         this.geminiService = new GeminiService();
         this.newsApiService = new NewsApiService();
+        this.morningBriefing = new MorningBriefing(scanner, geminiService, newsApiService);
     }
 
     /**
-     * Starts the interactive terminal loop and handles menu navigation.
+     * Starts the main menu loop and routes all top-level options.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It exits when the user chooses option 0.
+     * @return Nothing. It exits only when user chooses option 0.
      */
     public void start() {
         boolean keepRunning = true;
 
         try {
+            showStartupSplash();
+
             while (keepRunning) {
                 showMainMenu();
-                String menuChoice = readLine("Choose an option: ");
+                String menuChoice = readLine("Your choice:");
 
                 if ("1".equals(menuChoice)) {
                     handleNewsSearchFlow();
@@ -73,13 +83,15 @@ public class MenuUI {
                     handleTextSummarizerFlow();
                 } else if ("3".equals(menuChoice)) {
                     handleContentAnalyzerFlow();
+                } else if ("5".equals(menuChoice)) {
+                    handleMorningBriefingFlow();
                 } else if ("0".equals(menuChoice)) {
                     keepRunning = false;
-                    System.out.println("Goodbye.");
+                    printSuccessMessage("Goodbye.");
                 } else {
                     printErrorBox(
                             "ERROR: Invalid menu option.",
-                            "Please choose 1, 2, 3, or 0."
+                            "Please choose 1, 2, 3, 5, or 0."
                     );
                 }
             }
@@ -94,34 +106,62 @@ public class MenuUI {
     }
 
     /**
-     * Prints the main menu using an aesthetic bordered layout.
+     * Shows the startup splash screen, then pauses briefly before menu display.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It prints directly to the terminal.
+     * @return Nothing. It prints directly to terminal.
      */
-    private void showMainMenu() {
-        System.out.println("\u2554" + "\u2550".repeat(38) + "\u2557");
-        System.out.println("\u2551        NEWS & SUMMARY ASSISTANT      \u2551");
-        System.out.println("\u2560" + "\u2550".repeat(38) + "\u2563");
-        System.out.println("\u2551  [1]  Search & Summarize News        \u2551");
-        System.out.println("\u2551  [2]  Summarize My Own Text          \u2551");
-        System.out.println("\u2551  [3]  Analyze Content                \u2551");
-        System.out.println("\u2551  [0]  Exit                           \u2551");
-        System.out.println("\u255A" + "\u2550".repeat(38) + "\u255D");
+    private void showStartupSplash() {
+        System.out.println();
+        TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
+        TerminalUtils.printCenteredLine("", WHITE, RESET);
+        TerminalUtils.printCenteredLine("WELCOME", CYAN + BOLD, RESET);
+        TerminalUtils.printCenteredLine("", WHITE, RESET);
+        TerminalUtils.printCenteredLine("NEWS & SUMMARY ASSISTANT", CYAN + BOLD, RESET);
+        TerminalUtils.printCenteredLine("", WHITE, RESET);
+        TerminalUtils.printCenteredLine("Powered by Gemini AI  |  NewsAPI  |  Java", CYAN, RESET);
+        TerminalUtils.printCenteredLine("", WHITE, RESET);
+        TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
+        System.out.println();
+        TerminalUtils.pause(1500);
     }
 
     /**
-     * Runs option 1 where user question and date range are turned into a news summary.
+     * Prints the main menu using the shared 80-character centered style.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It loops until the user answers no.
+     * @return Nothing. It prints directly to terminal.
+     */
+    private void showMainMenu() {
+        List<String> menuLines = new ArrayList<>();
+        menuLines.add("[1]  Search & Summarize News");
+        menuLines.add("[2]  Summarize My Own Text");
+        menuLines.add("[3]  Analyze Content");
+        menuLines.add("[5]  Morning Briefing");
+        menuLines.add("[0]  Exit");
+
+        TerminalUtils.printTitledBox(
+                "NEWS & SUMMARY ASSISTANT",
+                menuLines,
+                CYAN + BOLD,
+                CYAN + BOLD,
+                WHITE,
+                RESET
+        );
+    }
+
+    /**
+     * Handles option 1 news flow with automatic date extraction from question text.
+     *
+     * @param none This method does not receive arguments.
+     * @return Nothing. It loops until user answers no.
      */
     private void handleNewsSearchFlow() {
         boolean continueSearching = true;
 
         while (continueSearching) {
             try {
-                String userQuestion = readLine("What do you want to know about? (e.g. What did Trump say about Iran on 17th April 2026?) ");
+                String userQuestion = readLine("What do you want to know about?");
                 if (userQuestion.isEmpty()) {
                     printErrorBox(
                             "ERROR: The question cannot be empty.",
@@ -136,7 +176,7 @@ public class MenuUI {
                 }
 
                 String keywordSourceText = sanitizeQueryForKeywordExtraction(userQuestion);
-                String optimizedKeywords = runGeminiQuietly(() -> geminiService.formatQueryForNews(keywordSourceText));
+                String optimizedKeywords = geminiService.formatQueryForNews(keywordSourceText);
                 boolean usedGeminiKeywordFallback = isGeminiFallbackResponse(optimizedKeywords);
 
                 if (usedGeminiKeywordFallback) {
@@ -165,12 +205,12 @@ public class MenuUI {
                 }
 
                 String summary;
-                if ("No articles found for this query and date range.".equals(combinedArticles)) {
+                if (NO_ARTICLES_MESSAGE.equals(combinedArticles)) {
                     summary = combinedArticles;
                 } else if (usedGeminiKeywordFallback) {
                     summary = buildLocalArticleSummary(combinedArticles);
                 } else {
-                    summary = runGeminiQuietly(() -> geminiService.summarizeArticles(combinedArticles));
+                    summary = geminiService.summarizeArticles(combinedArticles);
                     if (isGeminiFallbackResponse(summary)) {
                         printGeminiUnavailableNotice(
                                 "article summarization",
@@ -180,7 +220,7 @@ public class MenuUI {
                     }
                 }
 
-                printSummaryBox(summary);
+                printSummaryOutput(combinedArticles, summary);
             } catch (Exception exception) {
                 printErrorBox(
                         "ERROR: Something went wrong while searching news.",
@@ -188,31 +228,31 @@ public class MenuUI {
                 );
             }
 
-            continueSearching = askYesOrNo("Search again? (yes/no): ");
+            continueSearching = askYesOrNo("Search again? (yes/no)");
         }
     }
 
     /**
-     * Runs option 2 where the user pastes free text and receives a concise summary.
+     * Handles option 2 user text summarization using double-Enter multiline input.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It loops until the user answers no.
+     * @return Nothing. It loops until user answers no.
      */
     private void handleTextSummarizerFlow() {
         boolean continueSummarizing = true;
 
         while (continueSummarizing) {
             try {
-                System.out.println("Paste your text below. When done, type END on a new line and press Enter:");
-                String userText = readMultilineTextUntilEnd();
+                TerminalUtils.printCenteredLine("Paste your text below. Press Enter twice when done:", WHITE, RESET);
+                String userText = readMultilineTextUntilDoubleEnter();
 
                 if (userText.isEmpty()) {
                     printErrorBox(
                             "ERROR: No text was provided.",
-                            "Please paste your content and type END on a new line."
+                            "Paste your text and press Enter twice when done."
                     );
                 } else {
-                    String summary = runGeminiQuietly(() -> geminiService.summarizeText(userText));
+                    String summary = geminiService.summarizeText(userText);
                     if (isGeminiFallbackResponse(summary)) {
                         printGeminiUnavailableNotice(
                                 "text summarization",
@@ -220,7 +260,8 @@ public class MenuUI {
                         );
                         summary = buildLocalTextSummary(userText);
                     }
-                    printSummaryBox(summary);
+
+                    printSummaryOutput(userText, summary);
                 }
             } catch (Exception exception) {
                 printErrorBox(
@@ -229,15 +270,15 @@ public class MenuUI {
                 );
             }
 
-            continueSummarizing = askYesOrNo("Summarize another? (yes/no): ");
+            continueSummarizing = askYesOrNo("Summarize another? (yes/no)");
         }
     }
 
     /**
-     * Runs option 3 where users can analyze lyrics, book excerpts, or newspaper articles.
+     * Opens the content analyzer flow from option 3.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. Control returns to main menu after the analyzer flow ends.
+     * @return Nothing. Control returns to main menu when analyzer exits.
      */
     private void handleContentAnalyzerFlow() {
         try {
@@ -252,10 +293,27 @@ public class MenuUI {
     }
 
     /**
-     * Derives date range directly from the question text or falls back to last 3 weeks.
+     * Runs the new Morning Briefing flow from option 5.
      *
-     * @param userQuestion The full question typed by the user.
-     * @return A validated date range, or null when the extracted range is invalid.
+     * @param none This method does not receive arguments.
+     * @return Nothing. It returns to main menu after briefing flow ends.
+     */
+    private void handleMorningBriefingFlow() {
+        try {
+            morningBriefing.start();
+        } catch (Exception exception) {
+            printErrorBox(
+                    "ERROR: Morning Briefing could not start.",
+                    "Please try again."
+            );
+        }
+    }
+
+    /**
+     * Derives date range from question text, defaulting to last 3 weeks when absent.
+     *
+     * @param userQuestion User question text.
+     * @return Validated date range selection or null on invalid ranges.
      */
     private DateRangeSelection deriveDateRangeFromQuestion(String userQuestion) {
         DateRangeSelection extractedRange = extractDateRangeFromQuestion(userQuestion);
@@ -281,10 +339,10 @@ public class MenuUI {
     }
 
     /**
-     * Extracts date or date range directly from natural language question text.
+     * Extracts explicit or relative dates directly from natural-language question text.
      *
-     * @param userQuestion The full question entered by the user.
-     * @return Parsed date range when found, otherwise null.
+     * @param userQuestion User question text.
+     * @return Parsed date range or null when no date expression is detected.
      */
     private DateRangeSelection extractDateRangeFromQuestion(String userQuestion) {
         if (userQuestion == null || userQuestion.isBlank()) {
@@ -348,10 +406,10 @@ public class MenuUI {
     }
 
     /**
-     * Extracts relative date expressions such as today, yesterday, or last X days.
+     * Extracts relative ranges like today, yesterday, last week, or last X days.
      *
-     * @param userQuestion The question text to inspect.
-     * @return A derived range for relative terms, or null when not present.
+     * @param userQuestion User question text.
+     * @return Derived relative date range or null when not present.
      */
     private DateRangeSelection extractRelativeDateRange(String userQuestion) {
         String lowerText = userQuestion.toLowerCase(Locale.ENGLISH);
@@ -385,11 +443,11 @@ public class MenuUI {
     }
 
     /**
-     * Reorders two dates into a valid ascending date range.
+     * Reorders two dates into ascending order when needed.
      *
-     * @param firstDate The first parsed date.
-     * @param secondDate The second parsed date.
-     * @return A normalized date range with fromDate less than or equal to toDate.
+     * @param firstDate First date candidate.
+     * @param secondDate Second date candidate.
+     * @return Valid normalized date range.
      */
     private DateRangeSelection toDateRange(LocalDate firstDate, LocalDate secondDate) {
         if (firstDate.isAfter(secondDate)) {
@@ -399,10 +457,10 @@ public class MenuUI {
     }
 
     /**
-     * Removes date expressions from user question before keyword extraction.
+     * Removes date expressions from question before keyword extraction.
      *
-     * @param userQuestion Raw user question text.
-     * @return Question text with obvious date fragments removed.
+     * @param userQuestion Raw question text.
+     * @return Sanitized keyword-friendly question text.
      */
     private String sanitizeQueryForKeywordExtraction(String userQuestion) {
         String sanitized = userQuestion == null ? "" : userQuestion;
@@ -416,15 +474,14 @@ public class MenuUI {
         if (sanitized.isEmpty()) {
             return userQuestion == null ? "" : userQuestion.trim();
         }
-
         return sanitized;
     }
 
     /**
-     * Parses user date text into a from/to date pair.
+     * Parses one raw date input into either single-day or range selection.
      *
-     * @param rawDateInput The exact date text entered by the user.
-     * @return A parsed date range, or null when parsing fails.
+     * @param rawDateInput Raw date text.
+     * @return Parsed date range selection or null when parsing fails.
      */
     private DateRangeSelection parseDateInput(String rawDateInput) {
         if (rawDateInput == null || rawDateInput.trim().isEmpty()) {
@@ -455,10 +512,10 @@ public class MenuUI {
     }
 
     /**
-     * Parses compact ranges like "10-17 April 2026".
+     * Parses compact ranges such as 10-17 April 2026.
      *
-     * @param rawDateInput The date text to inspect.
-     * @return A parsed range, or null if this pattern does not match.
+     * @param rawDateInput Raw date text.
+     * @return Parsed range or null when format does not match.
      */
     private DateRangeSelection parseCompactDayRange(String rawDateInput) {
         Matcher matcher = COMPACT_RANGE_PATTERN.matcher(rawDateInput);
@@ -480,22 +537,18 @@ public class MenuUI {
 
             LocalDate firstDate = LocalDate.of(year, month, startDay);
             LocalDate secondDate = LocalDate.of(year, month, endDay);
-
-            if (firstDate.isAfter(secondDate)) {
-                return new DateRangeSelection(secondDate, firstDate);
-            }
-            return new DateRangeSelection(firstDate, secondDate);
+            return toDateRange(firstDate, secondDate);
         } catch (DateTimeException | NumberFormatException exception) {
             return null;
         }
     }
 
     /**
-     * Parses ranges separated by words like "to" or symbols like " - ".
+     * Parses ranges split by custom separator regex.
      *
-     * @param rawDateInput The full text entered by the user.
-     * @param separatorRegex The separator pattern to split by.
-     * @return A parsed range, or null when this format is not valid.
+     * @param rawDateInput Raw date range text.
+     * @param separatorRegex Separator pattern used for split.
+     * @return Parsed range or null when invalid.
      */
     private DateRangeSelection parseSeparatedRange(String rawDateInput, String separatorRegex) {
         String[] pieces = rawDateInput.trim().split(separatorRegex);
@@ -506,28 +559,24 @@ public class MenuUI {
         try {
             LocalDate firstDate = parseSingleDate(pieces[0]);
             LocalDate secondDate = parseSingleDate(pieces[1]);
-
-            if (firstDate.isAfter(secondDate)) {
-                return new DateRangeSelection(secondDate, firstDate);
-            }
-            return new DateRangeSelection(firstDate, secondDate);
+            return toDateRange(firstDate, secondDate);
         } catch (DateTimeParseException exception) {
             return null;
         }
     }
 
     /**
-     * Parses one date using supported formats.
+     * Parses one date value using all supported date formatter patterns.
      *
-     * @param rawDateValue One date value from user input.
-     * @return A parsed LocalDate.
+     * @param rawDateValue One date fragment.
+     * @return Parsed LocalDate.
      */
     private LocalDate parseSingleDate(String rawDateValue) {
         String normalizedValue = rawDateValue == null ? "" : rawDateValue.trim();
         normalizedValue = normalizedValue
-            .replace(",", " ")
-            .replaceAll("(?i)\\b(\\d{1,2})(st|nd|rd|th)\\b", "$1")
-            .replaceAll("\\s+", " ");
+                .replace(",", " ")
+                .replaceAll("(?i)\\b(\\d{1,2})(st|nd|rd|th)\\b", "$1")
+                .replaceAll("\\s+", " ");
 
         for (DateTimeFormatter formatter : SUPPORTED_DATE_FORMATS) {
             try {
@@ -541,10 +590,10 @@ public class MenuUI {
     }
 
     /**
-     * Checks if the chosen range is older than NewsAPI's 30-day limit.
+     * Validates whether selected range violates NewsAPI 30-day historical limit.
      *
-     * @param dateRangeSelection The chosen date range.
-     * @return True if any requested date is older than 30 days.
+     * @param dateRangeSelection Date range selection.
+     * @return True when selected range is too old.
      */
     private boolean isDateRangeOlderThanThirtyDays(DateRangeSelection dateRangeSelection) {
         LocalDate oldestAllowedDate = LocalDate.now().minusDays(30);
@@ -553,10 +602,10 @@ public class MenuUI {
     }
 
     /**
-     * Checks if the selected date range goes into the future.
+     * Validates whether selected range includes future dates.
      *
-     * @param dateRangeSelection The chosen date range.
-     * @return True when either date is after today.
+     * @param dateRangeSelection Date range selection.
+     * @return True when range includes future dates.
      */
     private boolean isDateRangeInFuture(DateRangeSelection dateRangeSelection) {
         LocalDate today = LocalDate.now();
@@ -565,23 +614,23 @@ public class MenuUI {
     }
 
     /**
-     * Prints the exact required out-of-range message for NewsAPI dates.
+     * Prints out-of-range NewsAPI date guidance in styled error format.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It prints directly to the terminal.
+     * @return Nothing. It prints directly to terminal.
      */
     private void showNewsApiDateError() {
-        System.out.println("\u2554" + "\u2550".repeat(54) + "\u2557");
-        System.out.println("\u2551  ERROR: NewsAPI only supports the last 30 days.      \u2551");
-        System.out.println("\u2551  Your requested date is out of range.                \u2551");
-        System.out.println("\u2551  Please enter a date within the last 30 days.        \u2551");
-        System.out.println("\u255A" + "\u2550".repeat(54) + "\u255D");
+        printErrorBox(
+                "ERROR: NewsAPI only supports the last 30 days.",
+                "Your requested date is out of range.",
+                "Please use a date within the last 30 days."
+        );
     }
 
     /**
-     * Asks a yes or no question and validates the user's answer.
+     * Prompts for yes/no input with validation.
      *
-     * @param question The question text to display.
+     * @param question Prompt question.
      * @return True for yes, false for no.
      */
     private boolean askYesOrNo(String question) {
@@ -596,188 +645,119 @@ public class MenuUI {
 
             printErrorBox(
                     "ERROR: Please answer with yes or no.",
-                    "Example valid answers: yes, y, no, n."
+                    "Valid answers: yes, y, no, n."
             );
         }
     }
 
     /**
-     * Prints a prompt and returns trimmed user input from one line.
+     * Reads one line from terminal using styled centered prompt output.
      *
-     * @param prompt The text to show before reading input.
-     * @return Trimmed user input.
+     * @param prompt Prompt label text.
+     * @return Trimmed input text.
      */
     private String readLine(String prompt) {
-        System.out.print(prompt);
-        String input = scanner.nextLine();
-        return input == null ? "" : input.trim();
+        return TerminalUtils.prompt(scanner, prompt, CYAN, WHITE, RESET);
     }
 
     /**
-     * Reads multiple lines until the user types END on a line by itself.
+     * Reads multiline text until two consecutive empty lines are entered.
      *
      * @param none This method does not receive arguments.
-     * @return The full pasted text joined with line breaks.
+     * @return Trimmed multiline text.
      */
-    private String readMultilineTextUntilEnd() {
+    private String readMultilineTextUntilDoubleEnter() {
         StringBuilder textBuilder = new StringBuilder();
+        int emptyLineCount = 0;
 
         while (true) {
             String line = scanner.nextLine();
-            if (line != null && "END".equals(line.trim())) {
-                break;
-            }
+            String safeLine = line == null ? "" : line;
 
-            if (textBuilder.length() > 0) {
-                textBuilder.append('\n');
+            if (safeLine.trim().isEmpty()) {
+                emptyLineCount++;
+                if (emptyLineCount >= 2) {
+                    break;
+                }
+                if (textBuilder.length() > 0) {
+                    textBuilder.append('\n');
+                }
+            } else {
+                emptyLineCount = 0;
+                if (textBuilder.length() > 0) {
+                    textBuilder.append('\n');
+                }
+                textBuilder.append(safeLine);
             }
-            textBuilder.append(line == null ? "" : line);
         }
 
         return textBuilder.toString().trim();
     }
 
     /**
-     * Prints the summary inside a bordered box and wraps text at 40 characters.
+     * Prints summary box and all required post-summary extras.
      *
-     * @param summaryText The summary text to display.
-     * @return Nothing. It prints directly to the terminal.
+     * @param originalText Original text used to create summary.
+     * @param summaryText Final summary text shown to user.
+     * @return Nothing. It prints directly to terminal.
      */
-    private void printSummaryBox(String summaryText) {
-        String safeSummaryText = summaryText == null || summaryText.trim().isEmpty()
-                ? "Could not complete request. Please try again."
-                : summaryText.trim();
+    private void printSummaryOutput(String originalText, String summaryText) {
+        TerminalUtils.printSummaryBox(
+                "YOUR SUMMARY",
+                summaryText,
+                CYAN + BOLD,
+                CYAN + BOLD,
+                WHITE,
+                RESET
+        );
 
-        List<String> wrappedLines = wrapText(safeSummaryText, SUMMARY_TEXT_WIDTH);
-        int contentWidth = SUMMARY_TEXT_WIDTH + 4;
+        TerminalUtils.printWordStats(originalText, summaryText, YELLOW, RESET);
 
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth) + "\u2557");
-        System.out.println("\u2551" + centerText("YOUR SUMMARY", contentWidth) + "\u2551");
-        System.out.println("\u2560" + "\u2550".repeat(contentWidth) + "\u2563");
-        for (String wrappedLine : wrappedLines) {
-            System.out.println("\u2551  " + padRight(wrappedLine, SUMMARY_TEXT_WIDTH) + "  \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth) + "\u255D");
+        String topKeywords = resolveTopKeywords(summaryText);
+        TerminalUtils.printTopKeywords(topKeywords, YELLOW, BOLD, RESET);
+
+        TerminalUtils.printGreenDivider(GREEN, RESET);
     }
 
     /**
-     * Wraps text into lines that are at most the requested width.
+     * Resolves top five keywords from summary using Gemini, with local fallback.
      *
-     * @param text The original text.
-     * @param width The maximum width for each line.
-     * @return A list of wrapped text lines.
+     * @param summaryText Summary text source.
+     * @return Comma-separated keywords.
      */
-    private List<String> wrapText(String text, int width) {
-        List<String> lines = new ArrayList<>();
-        String remainingText = text.replace('\r', ' ').replace('\n', ' ').replaceAll("\\s+", " ").trim();
-
-        if (remainingText.isEmpty()) {
-            lines.add("");
-            return lines;
+    private String resolveTopKeywords(String summaryText) {
+        String keywords = geminiService.extractTopKeywords(summaryText);
+        if (isGeminiFallbackResponse(keywords) || keywords.isBlank()) {
+            return buildLocalKeywords(summaryText);
         }
-
-        while (remainingText.length() > width) {
-            int splitIndex = remainingText.lastIndexOf(' ', width);
-            if (splitIndex <= 0) {
-                splitIndex = width;
-            }
-
-            lines.add(remainingText.substring(0, splitIndex).trim());
-            remainingText = remainingText.substring(splitIndex).trim();
-        }
-
-        if (!remainingText.isEmpty()) {
-            lines.add(remainingText);
-        }
-
-        return lines;
+        return keywords;
     }
 
     /**
-     * Prints one or more error lines in a bordered box.
+     * Prints standardized Gemini-unavailable info with fallback details.
      *
-     * @param messageLines Each entry is one line shown to the user.
-     * @return Nothing. It prints directly to the terminal.
+     * @param failedStep Failed Gemini capability description.
+     * @param fallbackAction Local fallback action description.
+     * @return Nothing. It prints directly to terminal.
      */
-    private void printErrorBox(String... messageLines) {
-        int contentWidth = 62;
-        List<String> wrappedErrorLines = new ArrayList<>();
+    private void printGeminiUnavailableNotice(String failedStep, String fallbackAction) {
+        List<String> infoLines = new ArrayList<>();
+        infoLines.add("INFO: Gemini " + failedStep + " is unavailable right now.");
+        infoLines.add(fallbackAction);
 
-        for (String messageLine : messageLines) {
-            String safeMessageLine = messageLine == null ? "" : messageLine;
-            wrappedErrorLines.addAll(wrapText(safeMessageLine, contentWidth));
+        String reason = geminiService.getLastFailureReason();
+        if (reason != null && !reason.isBlank()) {
+            infoLines.add("Details: " + reason);
         }
 
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String wrappedErrorLine : wrappedErrorLines) {
-            System.out.println("\u2551 " + padRight(wrappedErrorLine, contentWidth) + " \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
+        printInfoBox(infoLines.toArray(new String[0]));
     }
 
     /**
-     * Centers text inside a fixed-width field.
+     * Checks if text equals the standard Gemini fallback response.
      *
-     * @param value The text to center.
-     * @param width The target width.
-     * @return Centered text padded with spaces.
-     */
-    private String centerText(String value, int width) {
-        if (value.length() >= width) {
-            return value;
-        }
-
-        int totalPadding = width - value.length();
-        int leftPadding = totalPadding / 2;
-        int rightPadding = totalPadding - leftPadding;
-
-        return " ".repeat(leftPadding) + value + " ".repeat(rightPadding);
-    }
-
-    /**
-     * Pads text with spaces on the right so columns stay aligned.
-     *
-     * @param value The original text.
-     * @param width The target width.
-     * @return Right-padded text.
-     */
-    private String padRight(String value, int width) {
-        if (value.length() >= width) {
-            return value;
-        }
-        return value + " ".repeat(width - value.length());
-    }
-
-    /**
-     * Runs Gemini calls while suppressing malformed internal console boxes.
-     *
-     * @param geminiCall A callable block that returns Gemini text output.
-     * @return Gemini output text, or fallback response on failure.
-     */
-    private String runGeminiQuietly(Supplier<String> geminiCall) {
-        PrintStream originalOut = System.out;
-        ByteArrayOutputStream ignoredOutput = new ByteArrayOutputStream();
-        PrintStream quietOut = null;
-
-        try {
-            quietOut = new PrintStream(ignoredOutput, true, "UTF-8");
-            System.setOut(quietOut);
-            return geminiCall.get();
-        } catch (Exception exception) {
-            return GEMINI_FALLBACK_RESPONSE;
-        } finally {
-            System.setOut(originalOut);
-            if (quietOut != null) {
-                quietOut.close();
-            }
-        }
-    }
-
-    /**
-     * Checks if a Gemini response contains the common fallback failure message.
-     *
-     * @param responseText The response text returned from GeminiService.
-     * @return True when the response indicates Gemini could not complete the request.
+     * @param responseText Response text to inspect.
+     * @return True when fallback text is detected.
      */
     private boolean isGeminiFallbackResponse(String responseText) {
         if (responseText == null) {
@@ -787,48 +767,54 @@ public class MenuUI {
     }
 
     /**
-     * Prints one standardized Gemini-unavailable notice with fallback action and details.
+     * Prints a red styled bordered error box.
      *
-     * @param failedStep The Gemini capability that failed.
-     * @param fallbackAction The local fallback action used by this app.
-     * @return Nothing. This method prints directly to the terminal.
+     * @param messageLines Error lines.
+     * @return Nothing. It prints directly to terminal.
      */
-    private void printGeminiUnavailableNotice(String failedStep, String fallbackAction) {
-        String detailsLine = buildGeminiDetailsLine();
-        if (detailsLine.isEmpty()) {
-            printErrorBox(
-                    "INFO: Gemini " + failedStep + " is unavailable right now.",
-                    fallbackAction
-            );
-            return;
+    private void printErrorBox(String... messageLines) {
+        List<String> lines = new ArrayList<>();
+        if (messageLines != null) {
+            for (String messageLine : messageLines) {
+                lines.add(messageLine == null ? "" : messageLine);
+            }
         }
-
-        printErrorBox(
-                "INFO: Gemini " + failedStep + " is unavailable right now.",
-                fallbackAction,
-                detailsLine
-        );
+        TerminalUtils.printSimpleBox(lines, RED + BOLD, RED, RESET);
     }
 
     /**
-     * Builds one compact details line from the most recent Gemini failure state.
+     * Prints a yellow styled bordered informational box.
      *
-     * @param none This method does not receive arguments.
-     * @return One details line or empty text when no failure details are available.
+     * @param messageLines Info lines.
+     * @return Nothing. It prints directly to terminal.
      */
-    private String buildGeminiDetailsLine() {
-        String reason = geminiService.getLastFailureReason();
-        if (reason == null || reason.isBlank()) {
-            return "";
+    private void printInfoBox(String... messageLines) {
+        List<String> lines = new ArrayList<>();
+        if (messageLines != null) {
+            for (String messageLine : messageLines) {
+                lines.add(messageLine == null ? "" : messageLine);
+            }
         }
-        return "Details: " + reason;
+        TerminalUtils.printSimpleBox(lines, YELLOW + BOLD, YELLOW, RESET);
     }
 
     /**
-     * Builds simple keyword text directly from the user's question when Gemini is unavailable.
+     * Prints a centered green success message line.
      *
-     * @param userQuestion The raw natural language question from the user.
-     * @return A compact keyword string suitable for NewsAPI search.
+     * @param message Success message text.
+     * @return Nothing. It prints directly to terminal.
+     */
+    private void printSuccessMessage(String message) {
+        System.out.println();
+        TerminalUtils.printCenteredLine(message, GREEN + BOLD, RESET);
+        System.out.println();
+    }
+
+    /**
+     * Builds fallback search keywords locally when Gemini keyword extraction fails.
+     *
+     * @param userQuestion User question text.
+     * @return Compact keyword string.
      */
     private String buildFallbackKeywords(String userQuestion) {
         String normalized = userQuestion == null ? "" : userQuestion.toLowerCase(Locale.ENGLISH);
@@ -868,28 +854,19 @@ public class MenuUI {
         stopWords.add("who");
 
         StringBuilder keywordBuilder = new StringBuilder();
-        String[] words = normalized.split(" ");
         int addedCount = 0;
-
-        for (String word : words) {
-            if (word.isEmpty()) {
+        for (String word : normalized.split(" ")) {
+            if (word.isEmpty() || stopWords.contains(word)) {
                 continue;
             }
-
-            if (stopWords.contains(word)) {
-                continue;
-            }
-
             if (word.length() < 3 && !word.matches("\\d+")) {
                 continue;
             }
-
             if (keywordBuilder.length() > 0) {
                 keywordBuilder.append(' ');
             }
             keywordBuilder.append(word);
             addedCount++;
-
             if (addedCount >= 10) {
                 break;
             }
@@ -898,15 +875,14 @@ public class MenuUI {
         if (keywordBuilder.length() == 0) {
             return normalized;
         }
-
         return keywordBuilder.toString();
     }
 
     /**
-     * Creates a readable local summary from combined article titles when Gemini is unavailable.
+     * Builds local fallback summary from headline titles when Gemini is unavailable.
      *
-     * @param combinedArticles Combined title and description text from NewsAPI.
-     * @return A short paragraph-style summary.
+     * @param combinedArticles Combined article text.
+     * @return Readable local summary.
      */
     private String buildLocalArticleSummary(String combinedArticles) {
         String[] lines = combinedArticles.split("\\r?\\n");
@@ -925,12 +901,11 @@ public class MenuUI {
         }
 
         if (titles.isEmpty()) {
-            return "Gemini is currently unavailable. News articles were found, but an AI summary could not be generated right now.";
+            return "Gemini is currently unavailable. News articles were found, but AI summary is unavailable right now.";
         }
 
         StringBuilder summaryBuilder = new StringBuilder();
         summaryBuilder.append("Gemini is currently unavailable, so this is a direct quick summary from the latest headlines: ");
-
         for (int index = 0; index < titles.size(); index++) {
             summaryBuilder.append(titles.get(index));
             if (index < titles.size() - 1) {
@@ -939,20 +914,19 @@ public class MenuUI {
                 summaryBuilder.append('.');
             }
         }
-
         return summaryBuilder.toString();
     }
 
     /**
-     * Creates a simple local text summary by keeping early sentences to about 30 percent length.
+     * Builds local fallback summary from user text when Gemini is unavailable.
      *
-     * @param userText The original user text input.
-     * @return A shortened readable summary without calling Gemini.
+     * @param userText Raw user text.
+     * @return Local compressed summary text.
      */
     private String buildLocalTextSummary(String userText) {
         String normalizedText = userText.replaceAll("\\s+", " ").trim();
         if (normalizedText.isEmpty()) {
-            return "Could not complete request. Please try again.";
+            return GEMINI_FALLBACK_RESPONSE;
         }
 
         int targetLength = Math.max(120, (int) Math.round(normalizedText.length() * 0.30));
@@ -963,12 +937,10 @@ public class MenuUI {
             if (sentence.isBlank()) {
                 continue;
             }
-
             if (summaryBuilder.length() > 0) {
                 summaryBuilder.append(' ');
             }
             summaryBuilder.append(sentence.trim());
-
             if (summaryBuilder.length() >= targetLength) {
                 break;
             }
@@ -981,40 +953,105 @@ public class MenuUI {
         if (summaryBuilder.length() > targetLength + 40) {
             return summaryBuilder.substring(0, targetLength + 40).trim() + "...";
         }
-
         return summaryBuilder.toString();
     }
 
     /**
-     * Creates supported date parsers for single date inputs.
+     * Builds local keyword list when Gemini keyword extraction is unavailable.
+     *
+     * @param text Source text for keyword extraction.
+     * @return Five comma-separated fallback keywords.
+     */
+    private String buildLocalKeywords(String text) {
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH)
+                .replaceAll("[^a-z0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (normalized.isEmpty()) {
+            return "news, summary, update, topic, highlights";
+        }
+
+        Set<String> stopWords = new HashSet<>();
+        stopWords.add("the");
+        stopWords.add("and");
+        stopWords.add("for");
+        stopWords.add("with");
+        stopWords.add("from");
+        stopWords.add("that");
+        stopWords.add("this");
+        stopWords.add("into");
+        stopWords.add("about");
+        stopWords.add("have");
+        stopWords.add("has");
+        stopWords.add("are");
+        stopWords.add("was");
+        stopWords.add("were");
+
+        Map<String, Integer> counts = new HashMap<>();
+        for (String word : normalized.split(" ")) {
+            if (word.length() < 3 || stopWords.contains(word)) {
+                continue;
+            }
+            counts.put(word, counts.getOrDefault(word, 0) + 1);
+        }
+
+        if (counts.isEmpty()) {
+            return "news, summary, update, topic, highlights";
+        }
+
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
+        entries.sort((left, right) -> {
+            int compareCount = Integer.compare(right.getValue(), left.getValue());
+            if (compareCount != 0) {
+                return compareCount;
+            }
+            return left.getKey().compareTo(right.getKey());
+        });
+
+        List<String> keywords = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : entries) {
+            keywords.add(entry.getKey());
+            if (keywords.size() == 5) {
+                break;
+            }
+        }
+
+        while (keywords.size() < 5) {
+            keywords.add("news");
+        }
+
+        return String.join(", ", keywords);
+    }
+
+    /**
+     * Creates supported date formatters for parsing single-date expressions.
      *
      * @param none This method does not receive arguments.
-     * @return A list of formatters in the order they should be tried.
+     * @return Supported formatter list.
      */
     private static List<DateTimeFormatter> createDateFormatters() {
         List<DateTimeFormatter> formatters = new ArrayList<>();
-
         formatters.add(new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d MMMM uuuu").toFormatter(Locale.ENGLISH));
         formatters.add(new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("MMMM d uuuu").toFormatter(Locale.ENGLISH));
         formatters.add(new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d/M/uuuu").toFormatter(Locale.ENGLISH));
         formatters.add(new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("uuuu-M-d").toFormatter(Locale.ENGLISH));
-
         return formatters;
     }
 
     /**
-     * Holds one validated date range for NewsAPI requests.
+     * Container for one validated NewsAPI date range selection.
      */
     private static final class DateRangeSelection {
         private final LocalDate fromDate;
         private final LocalDate toDate;
 
         /**
-         * Stores from and to dates for one user query.
+         * Creates one immutable date-range value object.
          *
-         * @param fromDate The starting date.
-         * @param toDate The ending date.
-         * @return A date range container.
+         * @param fromDate Start date.
+         * @param toDate End date.
+         * @return A date-range container.
          */
         private DateRangeSelection(LocalDate fromDate, LocalDate toDate) {
             this.fromDate = fromDate;
@@ -1022,7 +1059,7 @@ public class MenuUI {
         }
 
         /**
-         * Converts the start date to NewsAPI text format.
+         * Converts start date to NewsAPI text format.
          *
          * @param none This method does not receive arguments.
          * @return Start date as yyyy-MM-dd.
@@ -1032,7 +1069,7 @@ public class MenuUI {
         }
 
         /**
-         * Converts the end date to NewsAPI text format.
+         * Converts end date to NewsAPI text format.
          *
          * @param none This method does not receive arguments.
          * @return End date as yyyy-MM-dd.

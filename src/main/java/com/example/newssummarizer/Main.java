@@ -6,7 +6,14 @@
  */
 package com.example.newssummarizer;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Main {//The purpose here basically is to start the program itself
+
+    private static final String RED = "\u001B[31m";
+    private static final String RESET = "\u001B[0m";
+    private static final String BOLD = "\u001B[1m";
 
     /**
      * Starts the application by handing control to the menu screen.
@@ -30,9 +37,9 @@ public class Main {//The purpose here basically is to start the program itself
      * @return Nothing. It only prints to the terminal.
      */
     private static void printStartupError() {
-        System.out.println("\u2554" + "\u2550".repeat(54) + "\u2557");
-        System.out.println("\u2551  ERROR: The application could not start correctly.    \u2551");
-        System.out.println("\u2551  Please try running it again.                         \u2551");
-        System.out.println("\u255A" + "\u2550".repeat(54) + "\u255D");
+        List<String> lines = new ArrayList<>();
+        lines.add("ERROR: The application could not start correctly.");
+        lines.add("Please try running it again.");
+        TerminalUtils.printSimpleBox(lines, RED + BOLD, RED, RESET);
     }
 }

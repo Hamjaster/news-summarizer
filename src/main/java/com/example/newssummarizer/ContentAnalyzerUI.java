@@ -1,28 +1,39 @@
 /*
  * This file controls the user experience for the content analyzer feature.
- * It asks the user what type of content they have, takes their input,
- * creates the right analyzer, and shows results.
+ * It asks the user what type of content they want to analyze, collects input,
+ * executes analysis actions, and prints styled summaries with extra metadata.
  */
 package com.example.newssummarizer;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.Set;
 
 public class ContentAnalyzerUI {
 
-    private static final int SUMMARY_TEXT_WIDTH = 40;
+    private static final String CYAN = "\u001B[36m";
+    private static final String WHITE = "\u001B[37m";
+    private static final String YELLOW = "\u001B[33m";
+    private static final String RED = "\u001B[31m";
+    private static final String GREEN = "\u001B[32m";
+    private static final String RESET = "\u001B[0m";
+    private static final String BOLD = "\u001B[1m";
+    private static final String GEMINI_FALLBACK_RESPONSE = "Could not complete request. Please try again.";
 
     private final Scanner scanner;
     private final GeminiService geminiService;
 
     /**
-     * Creates the UI controller for the content analyzer feature.
+     * Creates the content analyzer UI controller.
      *
      * @param scanner Shared scanner from the main menu flow.
-     * @param geminiService Shared Gemini service used by all analyzers.
-     * @return A ready content analyzer UI.
+     * @param geminiService Shared Gemini service used by analyzer methods.
+     * @return A ready ContentAnalyzerUI instance.
      */
     public ContentAnalyzerUI(Scanner scanner, GeminiService geminiService) {
         this.scanner = scanner;
@@ -30,10 +41,10 @@ public class ContentAnalyzerUI {
     }
 
     /**
-     * Starts the content analyzer menu loop and handles user choices.
+     * Starts the content analyzer loop and keeps state transitions clear.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It returns control to the main menu when done.
+     * @return Nothing. It returns to main menu when flow ends.
      */
     public void start() {
         boolean keepAnalyzing = true;
@@ -49,29 +60,28 @@ public class ContentAnalyzerUI {
                 if (userContent.isEmpty()) {
                     printErrorBox(
                             "ERROR: No content was provided.",
-                            "Please paste your content and type END on a new line."
+                            "Paste your text and press Enter twice when done."
                     );
-                    keepAnalyzing = askYesOrNo("Analyze something else? (yes/no): ");
+                    keepAnalyzing = askYesOrNo("Analyze something else? (yes/no)");
                     continue;
                 }
 
                 boolean backToTypeSelection = false;
                 while (!backToTypeSelection) {
                     selectedAnalyzer.printAnalysisMenu();
-                    String analysisChoice = readLine("Choose an option: ");
+                    String analysisChoice = readLine("Your choice:");
 
                     if ("0".equals(analysisChoice)) {
                         backToTypeSelection = true;
                         continue;
                     }
 
-                    printWorkingMessage();
                     String analysisResult = runSelectedAnalysis(selectedAnalyzer, analysisChoice, userContent);
                     if (analysisResult == null) {
                         continue;
                     }
 
-                    printSummaryBox(analysisResult);
+                    printSummaryOutput(userContent, analysisResult);
 
                     String postResultChoice = askPostResultChoice();
                     if ("1".equals(postResultChoice)) {
@@ -92,34 +102,21 @@ public class ContentAnalyzerUI {
                         "ERROR: The content analyzer encountered an unexpected problem.",
                         "Please try again."
                 );
-                keepAnalyzing = askYesOrNo("Analyze something else? (yes/no): ");
+                keepAnalyzing = askYesOrNo("Analyze something else? (yes/no)");
             }
         }
     }
 
     /**
-     * Prints a small loading status so users know analysis is in progress.
+     * Asks what to do after one analysis result is printed.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It prints directly to the terminal.
-     */
-    private void printWorkingMessage() {
-        printInfoBox(
-                "Loading...",
-                "Working on your analysis. Please wait."
-        );
-    }
-
-    /**
-     * Asks what to do after showing one analysis result.
-     *
-     * @param none This method does not receive arguments.
-     * @return One of: 1 back to current analyzer menu, 2 new content flow, 0 main menu.
+     * @return 1 for same analyzer menu, 2 for new content, 0 for main menu.
      */
     private String askPostResultChoice() {
         while (true) {
             showPostResultMenu();
-            String postResultChoice = readLine("Choose an option: ");
+            String postResultChoice = readLine("Your choice:");
 
             if ("1".equals(postResultChoice) || "2".equals(postResultChoice) || "0".equals(postResultChoice)) {
                 return postResultChoice;
@@ -136,28 +133,34 @@ public class ContentAnalyzerUI {
      * Prints the post-result navigation menu.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It prints directly to the terminal.
+     * @return Nothing. It prints directly to terminal.
      */
     private void showPostResultMenu() {
-        System.out.println("\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
-        System.out.println("\u2551          WHAT NEXT?                 \u2551");
-        System.out.println("\u2560\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2563");
-        System.out.println("\u2551  [1]  Back to analyzer menu         \u2551");
-        System.out.println("\u2551  [2]  Analyze new content           \u2551");
-        System.out.println("\u2551  [0]  Back to Main Menu            \u2551");
-        System.out.println("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D");
+        List<String> lines = new ArrayList<>();
+        lines.add("[1]  Back to analyzer menu");
+        lines.add("[2]  Analyze new content");
+        lines.add("[0]  Back to Main Menu");
+
+        TerminalUtils.printTitledBox(
+                "WHAT NEXT?",
+                lines,
+                CYAN + BOLD,
+                CYAN + BOLD,
+                WHITE,
+                RESET
+        );
     }
 
     /**
-     * Shows type options and returns the selected analyzer implementation.
+     * Shows type choices and returns selected analyzer implementation.
      *
      * @param none This method does not receive arguments.
-     * @return A concrete analyzer instance, or null to go back to main menu.
+     * @return Concrete analyzer or null when user goes back.
      */
     private ContentAnalyzer askForAnalyzerType() {
         while (true) {
             showTypeSelectionMenu();
-            String typeChoice = readLine("Choose an option: ");
+            String typeChoice = readLine("Your choice:");
 
             if ("1".equals(typeChoice)) {
                 return new LyricsAnalyzer(geminiService);
@@ -180,40 +183,50 @@ public class ContentAnalyzerUI {
     }
 
     /**
-     * Prints the content type selection menu.
+     * Prints the analyzer type selection menu.
      *
      * @param none This method does not receive arguments.
-     * @return Nothing. It prints directly to the terminal.
+     * @return Nothing. It prints directly to terminal.
      */
     private void showTypeSelectionMenu() {
-        System.out.println("\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
-        System.out.println("\u2551        WHAT ARE YOU ANALYZING?       \u2551");
-        System.out.println("\u2560\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2563");
-        System.out.println("\u2551  [1]  Song Lyrics                    \u2551");
-        System.out.println("\u2551  [2]  Book Excerpt                   \u2551");
-        System.out.println("\u2551  [3]  Newspaper Article              \u2551");
-        System.out.println("\u2551  [0]  Back to Main Menu              \u2551");
-        System.out.println("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D");
+        List<String> lines = new ArrayList<>();
+        lines.add("[1]  Song Lyrics");
+        lines.add("[2]  Book Excerpt");
+        lines.add("[3]  Newspaper Article");
+        lines.add("[0]  Back to Main Menu");
+
+        TerminalUtils.printTitledBox(
+                "WHAT ARE YOU ANALYZING?",
+                lines,
+                CYAN + BOLD,
+                CYAN + BOLD,
+                WHITE,
+                RESET
+        );
     }
 
     /**
-     * Collects multiline content input from the user until END is entered.
+     * Reads multiline analyzer input with double-enter completion.
      *
-     * @param typeName Display name of the selected content type.
-     * @return Full input text joined with line breaks.
+     * @param typeName Selected content type name.
+     * @return Trimmed multiline content text.
      */
     private String readContentInput(String typeName) {
-        System.out.println("Paste your " + typeName + " below. When done, type END on a new line and press Enter:");
-        return readMultilineTextUntilEnd();
+        TerminalUtils.printCenteredLine(
+                "Paste your " + typeName + " below. Press Enter twice when done:",
+                WHITE,
+                RESET
+        );
+        return readMultilineTextUntilDoubleEnter();
     }
 
     /**
-     * Executes the selected analyzer action based on content type and menu choice.
+     * Executes selected analyzer action and validates action choice.
      *
      * @param analyzer Selected analyzer implementation.
-     * @param analysisChoice Chosen action from the analyzer menu.
-     * @param contentText Full user content to analyze.
-     * @return Analysis result text, or null when choice is invalid.
+     * @param analysisChoice Analyzer menu choice.
+     * @param contentText User content text.
+     * @return Analysis result text or null when choice is invalid.
      */
     private String runSelectedAnalysis(ContentAnalyzer analyzer, String analysisChoice, String contentText) {
         try {
@@ -262,14 +275,14 @@ public class ContentAnalyzerUI {
                     "ERROR: Analysis failed for this content.",
                     "Please try again."
             );
-            return "Could not complete request. Please try again.";
+            return GEMINI_FALLBACK_RESPONSE;
         }
     }
 
     /**
-     * Asks a yes or no question and validates the answer.
+     * Asks yes/no with validation.
      *
-     * @param question Prompt shown to the user.
+     * @param question Prompt question.
      * @return True for yes, false for no.
      */
     private boolean askYesOrNo(String question) {
@@ -284,189 +297,200 @@ public class ContentAnalyzerUI {
 
             printErrorBox(
                     "ERROR: Please answer with yes or no.",
-                    "Example valid answers: yes, y, no, n."
+                    "Valid answers: yes, y, no, n."
             );
         }
     }
 
     /**
-     * Prints a prompt and reads one trimmed line from terminal input.
+     * Reads one line via styled prompt.
      *
-     * @param prompt Prompt text to display.
-     * @return Trimmed user input, or empty text when null.
+     * @param prompt Prompt label text.
+     * @return Trimmed user input.
      */
     private String readLine(String prompt) {
-        System.out.print(prompt);
-        String input = scanner.nextLine();
-        return input == null ? "" : input.trim();
+        return TerminalUtils.prompt(scanner, prompt, CYAN, WHITE, RESET);
     }
 
     /**
-     * Reads multiline text until END appears by itself on one line.
+     * Reads multiline content until user presses Enter twice consecutively.
      *
      * @param none This method does not receive arguments.
-     * @return Trimmed multiline text.
+     * @return Trimmed multiline input.
      */
-    private String readMultilineTextUntilEnd() {
+    private String readMultilineTextUntilDoubleEnter() {
         StringBuilder textBuilder = new StringBuilder();
+        int emptyLineCount = 0;
 
         while (true) {
             String line = scanner.nextLine();
-            if (line != null && "END".equals(line.trim())) {
-                break;
-            }
+            String safeLine = line == null ? "" : line;
 
-            if (textBuilder.length() > 0) {
-                textBuilder.append('\n');
+            if (safeLine.trim().isEmpty()) {
+                emptyLineCount++;
+                if (emptyLineCount >= 2) {
+                    break;
+                }
+                if (textBuilder.length() > 0) {
+                    textBuilder.append('\n');
+                }
+            } else {
+                emptyLineCount = 0;
+                if (textBuilder.length() > 0) {
+                    textBuilder.append('\n');
+                }
+                textBuilder.append(safeLine);
             }
-            textBuilder.append(line == null ? "" : line);
         }
 
         return textBuilder.toString().trim();
     }
 
     /**
-     * Prints analysis output inside the standard bordered summary box.
+     * Prints summary box and required post-summary stats, keywords, and divider.
      *
-     * @param summaryText Result text to display.
-     * @return Nothing. It prints directly to the terminal.
+     * @param originalText Original content text.
+     * @param summaryText Final summary text.
+     * @return Nothing. It prints directly to terminal.
      */
-    private void printSummaryBox(String summaryText) {
-        String safeSummaryText = summaryText == null || summaryText.trim().isEmpty()
-                ? "Could not complete request. Please try again."
-                : summaryText.trim();
+    private void printSummaryOutput(String originalText, String summaryText) {
+        TerminalUtils.printSummaryBox(
+                "YOUR SUMMARY",
+                summaryText,
+                CYAN + BOLD,
+                CYAN + BOLD,
+                WHITE,
+                RESET
+        );
 
-        List<String> wrappedLines = wrapText(safeSummaryText, SUMMARY_TEXT_WIDTH);
-        int contentWidth = SUMMARY_TEXT_WIDTH + 4;
+        TerminalUtils.printWordStats(originalText, summaryText, YELLOW, RESET);
 
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth) + "\u2557");
-        System.out.println("\u2551" + centerText("YOUR SUMMARY", contentWidth) + "\u2551");
-        System.out.println("\u2560" + "\u2550".repeat(contentWidth) + "\u2563");
-        for (String wrappedLine : wrappedLines) {
-            System.out.println("\u2551  " + padRight(wrappedLine, SUMMARY_TEXT_WIDTH) + "  \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth) + "\u255D");
+        String topKeywords = resolveTopKeywords(summaryText);
+        TerminalUtils.printTopKeywords(topKeywords, YELLOW, BOLD, RESET);
+
+        TerminalUtils.printGreenDivider(GREEN, RESET);
     }
 
     /**
-     * Prints one or more error lines in a bordered box with wrapped text.
+     * Resolves top 5 keywords from summary using Gemini with local fallback.
      *
-     * @param messageLines Error text lines to show.
-     * @return Nothing. It prints directly to the terminal.
+     * @param summaryText Summary text source.
+     * @return Comma-separated keyword list.
+     */
+    private String resolveTopKeywords(String summaryText) {
+        String keywords = geminiService.extractTopKeywords(summaryText);
+        if (isGeminiFallbackResponse(keywords) || keywords.isBlank()) {
+            return buildLocalKeywords(summaryText);
+        }
+        return keywords;
+    }
+
+    /**
+     * Checks if text equals the standard Gemini fallback response.
+     *
+     * @param value Response value.
+     * @return True when fallback text is detected.
+     */
+    private boolean isGeminiFallbackResponse(String value) {
+        if (value == null) {
+            return true;
+        }
+        return GEMINI_FALLBACK_RESPONSE.equalsIgnoreCase(value.trim());
+    }
+
+    /**
+     * Builds local keyword fallback when Gemini keyword extraction is unavailable.
+     *
+     * @param text Source text.
+     * @return Five comma-separated fallback keywords.
+     */
+    private String buildLocalKeywords(String text) {
+        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH)
+                .replaceAll("[^a-z0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (normalized.isEmpty()) {
+            return "analysis, content, summary, themes, insights";
+        }
+
+        Set<String> stopWords = new HashSet<>();
+        stopWords.add("the");
+        stopWords.add("and");
+        stopWords.add("for");
+        stopWords.add("with");
+        stopWords.add("from");
+        stopWords.add("that");
+        stopWords.add("this");
+        stopWords.add("into");
+        stopWords.add("about");
+        stopWords.add("have");
+        stopWords.add("has");
+        stopWords.add("are");
+        stopWords.add("was");
+        stopWords.add("were");
+
+        Map<String, Integer> counts = new HashMap<>();
+        for (String word : normalized.split(" ")) {
+            if (word.length() < 3 || stopWords.contains(word)) {
+                continue;
+            }
+            counts.put(word, counts.getOrDefault(word, 0) + 1);
+        }
+
+        if (counts.isEmpty()) {
+            return "analysis, content, summary, themes, insights";
+        }
+
+        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
+        entries.sort((left, right) -> {
+            int compareCount = Integer.compare(right.getValue(), left.getValue());
+            if (compareCount != 0) {
+                return compareCount;
+            }
+            return left.getKey().compareTo(right.getKey());
+        });
+
+        List<String> keywords = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : entries) {
+            keywords.add(entry.getKey());
+            if (keywords.size() == 5) {
+                break;
+            }
+        }
+
+        while (keywords.size() < 5) {
+            keywords.add("analysis");
+        }
+
+        return String.join(", ", keywords);
+    }
+
+    /**
+     * Prints a red styled bordered error box.
+     *
+     * @param messageLines Error lines.
+     * @return Nothing. It prints directly to terminal.
      */
     private void printErrorBox(String... messageLines) {
-        int contentWidth = 62;
-        List<String> wrappedErrorLines = new ArrayList<>();
-
-        for (String messageLine : messageLines) {
-            String safeLine = messageLine == null ? "" : messageLine;
-            wrappedErrorLines.addAll(wrapText(safeLine, contentWidth));
-        }
-
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String wrappedErrorLine : wrappedErrorLines) {
-            System.out.println("\u2551 " + padRight(wrappedErrorLine, contentWidth) + " \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
-    }
-
-    /**
-     * Prints one or more informational lines in a bordered box with wrapped text.
-     *
-     * @param messageLines Info text lines to show.
-     * @return Nothing. It prints directly to the terminal.
-     */
-    private void printInfoBox(String... messageLines) {
-        int contentWidth = 62;
-        List<String> wrappedInfoLines = new ArrayList<>();
-
-        for (String messageLine : messageLines) {
-            String safeLine = messageLine == null ? "" : messageLine;
-            wrappedInfoLines.addAll(wrapText(safeLine, contentWidth));
-        }
-
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String wrappedInfoLine : wrappedInfoLines) {
-            System.out.println("\u2551 " + padRight(wrappedInfoLine, contentWidth) + " \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
-    }
-
-    /**
-     * Wraps text so every line stays inside the selected width.
-     *
-     * @param text Raw text to wrap.
-     * @param width Max width for each wrapped line.
-     * @return List of wrapped lines.
-     */
-    private List<String> wrapText(String text, int width) {
         List<String> lines = new ArrayList<>();
-        String remainingText = text.replace('\r', ' ').replace('\n', ' ').replaceAll("\\s+", " ").trim();
-
-        if (remainingText.isEmpty()) {
-            lines.add("");
-            return lines;
-        }
-
-        while (remainingText.length() > width) {
-            int splitIndex = remainingText.lastIndexOf(' ', width);
-            if (splitIndex <= 0) {
-                splitIndex = width;
+        if (messageLines != null) {
+            for (String messageLine : messageLines) {
+                lines.add(messageLine == null ? "" : messageLine);
             }
-
-            lines.add(remainingText.substring(0, splitIndex).trim());
-            remainingText = remainingText.substring(splitIndex).trim();
         }
-
-        if (!remainingText.isEmpty()) {
-            lines.add(remainingText);
-        }
-
-        return lines;
+        TerminalUtils.printSimpleBox(lines, RED + BOLD, RED, RESET);
     }
 
     /**
-     * Centers text inside a fixed width area.
+     * Normalizes empty results into one safe fallback message.
      *
-     * @param value Text to center.
-     * @param width Width of the target field.
-     * @return Centered text with space padding.
-     */
-    private String centerText(String value, int width) {
-        if (value.length() >= width) {
-            return value;
-        }
-
-        int totalPadding = width - value.length();
-        int leftPadding = totalPadding / 2;
-        int rightPadding = totalPadding - leftPadding;
-
-        return " ".repeat(leftPadding) + value + " ".repeat(rightPadding);
-    }
-
-    /**
-     * Right-pads text so terminal box columns stay aligned.
-     *
-     * @param value Original text.
-     * @param width Target width.
-     * @return Right-padded text.
-     */
-    private String padRight(String value, int width) {
-        if (value.length() >= width) {
-            return value;
-        }
-        return value + " ".repeat(width - value.length());
-    }
-
-    /**
-     * Normalizes empty Gemini outputs into one safe fallback message.
-     *
-     * @param result Raw result from analyzer methods.
-     * @return Safe displayable result text.
+     * @param result Raw analyzer result.
+     * @return Safe non-empty result text.
      */
     private String safeResult(String result) {
         if (result == null || result.trim().isEmpty()) {
-            return "Could not complete request. Please try again.";
+            return GEMINI_FALLBACK_RESPONSE;
         }
         return result.trim();
     }

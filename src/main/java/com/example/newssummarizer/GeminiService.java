@@ -1,7 +1,6 @@
 /*
  * This file talks to Google Gemini AI.
- * It does three things: turns a user question into good search keywords.
- * It summarizes news articles and also summarizes pasted text.
+ * It formats keyword queries, summarizes content, and provides helper prompts.
  * It keeps all Gemini communication in one place.
  */
 package com.example.newssummarizer;
@@ -17,6 +16,8 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GeminiService {
 
@@ -24,6 +25,10 @@ public class GeminiService {
     private static final String GEMINI_ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
     private static final String FALLBACK_RESPONSE = "Could not complete request. Please try again.";
     private static final int[] RATE_LIMIT_RETRY_DELAYS_SECONDS = {15, 30, 60};
+    private static final String RED = "\u001B[31m";
+    private static final String YELLOW = "\u001B[33m";
+    private static final String BOLD = "\u001B[1m";
+    private static final String RESET = "\u001B[0m";
 
     private final HttpClient httpClient;
     private final String geminiApiKey;
@@ -32,7 +37,7 @@ public class GeminiService {
     /**
      * Creates a reusable Gemini service with one shared HTTP client.
      *
-     * @param none This constructor does not take inputs.
+     * @param none This constructor does not receive arguments.
      * @return A ready GeminiService object.
      */
     public GeminiService() {
@@ -59,23 +64,23 @@ public class GeminiService {
     }
 
     /**
-     * Returns the most recent Gemini failure reason in user-readable text.
+     * Returns the most recent Gemini failure reason in readable text.
      *
      * @param none This method does not receive arguments.
-     * @return A concise failure reason, or an empty string when no recent failure exists.
+     * @return Last failure reason text.
      */
     public String getLastFailureReason() {
         if (lastFailureReason == null) {
             return "";
         }
-        return lastFailureReason.trim();
+        return cleanResponse(lastFailureReason.trim());
     }
 
     /**
-     * Takes the user's natural language question and asks Gemini to extract clean search keywords optimized for NewsAPI.
+     * Extracts query keywords from a natural-language user question.
      *
-     * @param userQuestion The full question typed by the user.
-     * @return A short keyword string such as "Trump Iran statement".
+     * @param userQuestion Full user question text.
+     * @return Keyword text for NewsAPI search.
      */
     public String formatQueryForNews(String userQuestion) {
         if (userQuestion == null || userQuestion.trim().isEmpty()) {
@@ -83,7 +88,7 @@ public class GeminiService {
                     "ERROR: Your question is empty.",
                     "Please enter a real question before searching."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
 
         String prompt = "Extract the most important search keywords from this question for a news API query. "
@@ -92,10 +97,10 @@ public class GeminiService {
 
         String geminiResponse = sendPrompt(prompt);
         if (FALLBACK_RESPONSE.equals(geminiResponse)) {
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
 
-        String cleanedKeywords = geminiResponse
+        String cleanedKeywords = cleanResponse(geminiResponse)
                 .replaceAll("[\\p{Punct}]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
@@ -105,17 +110,17 @@ public class GeminiService {
                     "ERROR: Gemini returned empty keywords.",
                     "Please try your question again."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
 
-        return cleanedKeywords;
+        return cleanResponse(cleanedKeywords);
     }
 
     /**
-     * Takes all article titles and descriptions combined into one text, sends to Gemini, and returns one clear summary of all events.
+     * Summarizes multiple news articles into one coherent response.
      *
-     * @param combinedArticles All article text combined together.
-     * @return A single paragraph summary of the main news events.
+     * @param combinedArticles Combined article text.
+     * @return Summary text.
      */
     public String summarizeArticles(String combinedArticles) {
         if (combinedArticles == null || combinedArticles.trim().isEmpty()) {
@@ -123,7 +128,7 @@ public class GeminiService {
                     "ERROR: No article content is available to summarize.",
                     "Please search again with another question."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
 
         String prompt = "You are a news summarizer. Below are multiple news article titles and descriptions. "
@@ -132,22 +137,46 @@ public class GeminiService {
                 + "Articles:\n"
                 + combinedArticles;
 
-        return sendPrompt(prompt);
+        return cleanResponse(sendPrompt(prompt));
     }
 
     /**
-     * Takes any text the user pastes and returns a clear summary that is roughly 25 to 30 percent of the original length.
+     * Summarizes article text using a caller-provided instruction prompt.
      *
-     * @param userText The full text that the user pasted in the terminal.
-     * @return A concise summary that keeps the main meaning.
+     * @param combinedArticles Combined article text.
+     * @param summaryInstruction Custom instruction prefix for Gemini.
+     * @return Summary text.
+     */
+    public String summarizeArticles(String combinedArticles, String summaryInstruction) {
+        if (combinedArticles == null || combinedArticles.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: No article content is available to summarize.",
+                    "Please search again with another question."
+            );
+            return cleanResponse(FALLBACK_RESPONSE);
+        }
+
+        if (summaryInstruction == null || summaryInstruction.trim().isEmpty()) {
+            return summarizeArticles(combinedArticles);
+        }
+
+        String prompt = summaryInstruction.trim() + "\n\nHeadlines:\n" + combinedArticles;
+        return cleanResponse(sendPrompt(prompt));
+    }
+
+    /**
+     * Summarizes arbitrary user text to a concise output.
+     *
+     * @param userText Raw user text.
+     * @return Summarized text.
      */
     public String summarizeText(String userText) {
         if (userText == null || userText.trim().isEmpty()) {
             printErrorBox(
                     "ERROR: Your text input is empty.",
-                    "Please paste text and type END on a new line."
+                    "Paste your text and press Enter twice when done."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
 
         String prompt = "Summarize the following content clearly and concisely. "
@@ -156,14 +185,47 @@ public class GeminiService {
                 + "Text:\n"
                 + userText;
 
-        return sendPrompt(prompt);
+        return cleanResponse(sendPrompt(prompt));
     }
 
     /**
-     * Sends a prompt to Gemini and extracts candidates[0].content.parts[0].text from the response.
+     * Sends any custom prompt to Gemini and returns cleaned result text.
      *
-     * @param prompt The instruction text that should be sent to Gemini.
-     * @return Gemini text output, or a fallback message on failure.
+     * @param prompt Prompt text to send.
+     * @return Cleaned Gemini output.
+     */
+    public String generateFromPrompt(String prompt) {
+        if (prompt == null || prompt.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: Prompt is empty.",
+                    "Please provide a valid prompt."
+            );
+            return cleanResponse(FALLBACK_RESPONSE);
+        }
+
+        return cleanResponse(sendPrompt(prompt));
+    }
+
+    /**
+     * Extracts exactly five keywords from summary text.
+     *
+     * @param text Source text used for keyword extraction.
+     * @return Comma-separated keyword response.
+     */
+    public String extractTopKeywords(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return cleanResponse(FALLBACK_RESPONSE);
+        }
+
+        String prompt = "Extract exactly 5 single keywords from this text. Return them comma separated, nothing else: " + text;
+        return cleanResponse(sendPrompt(prompt));
+    }
+
+    /**
+     * Sends prompt payload to Gemini and extracts candidates[0].content.parts[0].text.
+     *
+     * @param prompt Prompt text to send.
+     * @return Gemini output text or fallback response.
      */
     private String sendPrompt(String prompt) {
         try {
@@ -186,6 +248,8 @@ public class GeminiService {
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
                     .build();
 
+            TerminalUtils.showLoading("Please wait");
+
             HttpResponse<String> response = null;
             for (int attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_SECONDS.length; attempt++) {
                 response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -206,12 +270,12 @@ public class GeminiService {
                         "ERROR: Gemini request failed before receiving a response.",
                         "Please try again in a moment."
                 );
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 handleGeminiHttpError(response.statusCode(), response.body());
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
             String responseBody = response.body();
@@ -221,7 +285,7 @@ public class GeminiService {
                         "ERROR: Gemini returned an empty response.",
                         "Please try again in a moment."
                 );
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
             JSONObject root = new JSONObject(responseBody);
@@ -232,7 +296,7 @@ public class GeminiService {
                         "ERROR: Gemini did not return any candidates.",
                         "Please try the request again."
                 );
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
             JSONObject firstCandidate = candidates.optJSONObject(0);
@@ -242,7 +306,7 @@ public class GeminiService {
                         "ERROR: Gemini candidate format is invalid.",
                         "Please try again."
                 );
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
             JSONObject content = firstCandidate.optJSONObject("content");
@@ -256,17 +320,17 @@ public class GeminiService {
                         "ERROR: Gemini response text is empty.",
                         "Please try again."
                 );
-                return FALLBACK_RESPONSE;
+                return cleanResponse(FALLBACK_RESPONSE);
             }
 
-            return text;
+            return cleanResponse(text);
         } catch (HttpTimeoutException exception) {
             setLastFailureReason("Gemini request timed out.");
             printErrorBox(
                     "ERROR: Gemini request timed out.",
                     "Please check your internet and try again."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             setLastFailureReason("Gemini request was interrupted.");
@@ -274,30 +338,30 @@ public class GeminiService {
                     "ERROR: Gemini request was interrupted.",
                     "Please try again."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         } catch (IOException exception) {
             setLastFailureReason("Could not reach Gemini service.");
             printErrorBox(
                     "ERROR: Could not reach Gemini.",
                     "Please check your connection and try again."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         } catch (Exception exception) {
             setLastFailureReason("Gemini returned malformed data.");
             printErrorBox(
                     "ERROR: Gemini returned malformed data.",
                     "Please try again with a different input."
             );
-            return FALLBACK_RESPONSE;
+            return cleanResponse(FALLBACK_RESPONSE);
         }
     }
 
     /**
-     * Prints a clear Gemini HTTP error message based on status code and response details.
+     * Handles non-2xx Gemini responses and stores a concise failure reason.
      *
-     * @param statusCode The HTTP status code returned by Gemini.
-     * @param responseBody The raw response body from Gemini.
-     * @return Nothing. This method only prints messages.
+     * @param statusCode HTTP status code.
+     * @param responseBody Raw response body text.
+     * @return Nothing. It prints user-facing errors.
      */
     private void handleGeminiHttpError(int statusCode, String responseBody) {
         String apiMessage = compactMessage(extractApiErrorMessage(responseBody), 180);
@@ -316,8 +380,8 @@ public class GeminiService {
 
         if (statusCode == 401 || statusCode == 403) {
             setLastFailureReason(apiMessage.isEmpty()
-                ? "Gemini API key is invalid or blocked (HTTP " + statusCode + ")."
-                : "Gemini API key is invalid or blocked (HTTP " + statusCode + "): " + apiMessage);
+                    ? "Gemini API key is invalid or blocked (HTTP " + statusCode + ")."
+                    : "Gemini API key is invalid or blocked (HTTP " + statusCode + "): " + apiMessage);
             printErrorBox(
                     "ERROR: Gemini API key is invalid or blocked.",
                     "Please update the key and try again.",
@@ -326,7 +390,7 @@ public class GeminiService {
             return;
         }
 
-            setLastFailureReason(apiMessage.isEmpty()
+        setLastFailureReason(apiMessage.isEmpty()
                 ? "Gemini request failed with status " + statusCode + "."
                 : "Gemini request failed with status " + statusCode + ": " + apiMessage);
 
@@ -337,10 +401,10 @@ public class GeminiService {
     }
 
     /**
-     * Extracts a readable error message from Gemini JSON error responses.
+     * Extracts a readable message from Gemini JSON error payload.
      *
-     * @param responseBody Raw Gemini response body.
-     * @return Error message text when available, otherwise an empty string.
+     * @param responseBody Raw response body.
+     * @return Error message text or empty string.
      */
     private String extractApiErrorMessage(String responseBody) {
         if (responseBody == null || responseBody.trim().isEmpty()) {
@@ -353,7 +417,6 @@ public class GeminiService {
             if (errorObject == null) {
                 return "";
             }
-
             return errorObject.optString("message", "").trim();
         } catch (Exception exception) {
             return "";
@@ -361,11 +424,11 @@ public class GeminiService {
     }
 
     /**
-     * Cleans and shortens long API error details for readable terminal output.
+     * Shortens long API messages into compact single-line output.
      *
-     * @param value The original error message text.
-     * @param maxLength Maximum characters to keep.
-     * @return A compact single-line message.
+     * @param value Raw message text.
+     * @param maxLength Maximum kept length.
+     * @return Compact message text.
      */
     private String compactMessage(String value, int maxLength) {
         if (value == null || value.isBlank()) {
@@ -386,63 +449,61 @@ public class GeminiService {
     }
 
     /**
-     * Prints the requested bordered wait message before retrying on HTTP 429.
+     * Prints retry wait information for HTTP 429 backoff intervals.
      *
-     * @param waitSeconds Seconds to wait before the next retry attempt.
-     * @return Nothing. This method prints directly to the terminal.
+     * @param waitSeconds Seconds before next retry.
+     * @return Nothing. It prints directly to terminal.
      */
     private void printRateLimitRetryBox(int waitSeconds) {
-        int contentWidth = 42;
-        String message = "  Rate limit hit. Retrying in " + waitSeconds + "s...";
-
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth) + "\u2557");
-        System.out.println("\u2551" + padRight(message, contentWidth) + "\u2551");
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth) + "\u255D");
+        List<String> lines = new ArrayList<>();
+        lines.add("Rate limit hit. Retrying in " + waitSeconds + "s...");
+        TerminalUtils.printSimpleBox(lines, YELLOW + BOLD, YELLOW, RESET);
     }
 
     /**
-     * Stores the most recent Gemini failure reason used by UI fallbacks.
+     * Stores the latest Gemini failure reason for UI fallback notices.
      *
      * @param reason Failure reason text.
-     * @return Nothing. This method updates in-memory state only.
+     * @return Nothing. It updates in-memory state.
      */
     private void setLastFailureReason(String reason) {
         this.lastFailureReason = reason == null ? "" : reason.trim();
     }
 
     /**
-     * Prints a clear bordered error message to the terminal.
+     * Cleans markdown artifacts from Gemini output before returning to UI.
      *
-     * @param messageLines The error message lines to show in the box.
-     * @return Nothing. This method only prints to the terminal.
+     * @param text Raw Gemini output text.
+     * @return Cleaned plain-text output.
      */
-    private void printErrorBox(String... messageLines) {
-        int contentWidth = 62;
-        for (String messageLine : messageLines) {
-            if (messageLine != null && messageLine.length() > contentWidth) {
-                contentWidth = messageLine.length();
-            }
+    private String cleanResponse(String text) {
+        if (text == null) {
+            return "";
         }
 
-        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String messageLine : messageLines) {
-            String safeMessageLine = messageLine == null ? "" : messageLine;
-            System.out.println("\u2551 " + padRight(safeMessageLine, contentWidth) + " \u2551");
-        }
-        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
+        String cleaned = text;
+        cleaned = cleaned.replaceAll("\\*\\*(.*?)\\*\\*", "$1");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\*\\s+", "- ");
+        cleaned = cleaned.replaceAll("(?m)^\\s*#+\\s*", "");
+        cleaned = cleaned.replace("`", "");
+        cleaned = cleaned.replaceAll("[ \\t]+\\n", "\n");
+        cleaned = cleaned.replaceAll("\\n{3,}", "\n\n");
+        return cleaned.trim();
     }
 
     /**
-     * Pads text with spaces so all boxed lines align.
+     * Prints a red bordered error message with shared terminal layout.
      *
-     * @param value The original text value.
-     * @param width The target width.
-     * @return The padded text.
+     * @param messageLines Error lines to print.
+     * @return Nothing. It prints directly to terminal.
      */
-    private String padRight(String value, int width) {
-        if (value.length() >= width) {
-            return value;
+    private void printErrorBox(String... messageLines) {
+        List<String> lines = new ArrayList<>();
+        if (messageLines != null) {
+            for (String messageLine : messageLines) {
+                lines.add(messageLine == null ? "" : messageLine);
+            }
         }
-        return value + " ".repeat(width - value.length());
+        TerminalUtils.printSimpleBox(lines, RED + BOLD, RED, RESET);
     }
 }
