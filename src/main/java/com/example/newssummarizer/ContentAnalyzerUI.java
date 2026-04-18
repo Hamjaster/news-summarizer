@@ -65,17 +65,27 @@ public class ContentAnalyzerUI {
                         continue;
                     }
 
+                    printWorkingMessage();
                     String analysisResult = runSelectedAnalysis(selectedAnalyzer, analysisChoice, userContent);
                     if (analysisResult == null) {
                         continue;
                     }
 
                     printSummaryBox(analysisResult);
-                    keepAnalyzing = askYesOrNo("Analyze something else? (yes/no): ");
-                    if (!keepAnalyzing) {
+
+                    String postResultChoice = askPostResultChoice();
+                    if ("1".equals(postResultChoice)) {
+                        continue;
+                    }
+                    if ("2".equals(postResultChoice)) {
+                        backToTypeSelection = true;
+                        continue;
+                    }
+
+                    if ("0".equals(postResultChoice)) {
+                        keepAnalyzing = false;
                         return;
                     }
-                    backToTypeSelection = true;
                 }
             } catch (Exception exception) {
                 printErrorBox(
@@ -85,6 +95,57 @@ public class ContentAnalyzerUI {
                 keepAnalyzing = askYesOrNo("Analyze something else? (yes/no): ");
             }
         }
+    }
+
+    /**
+     * Prints a small loading status so users know analysis is in progress.
+     *
+     * @param none This method does not receive arguments.
+     * @return Nothing. It prints directly to the terminal.
+     */
+    private void printWorkingMessage() {
+        printInfoBox(
+                "Loading...",
+                "Working on your analysis. Please wait."
+        );
+    }
+
+    /**
+     * Asks what to do after showing one analysis result.
+     *
+     * @param none This method does not receive arguments.
+     * @return One of: 1 back to current analyzer menu, 2 new content flow, 0 main menu.
+     */
+    private String askPostResultChoice() {
+        while (true) {
+            showPostResultMenu();
+            String postResultChoice = readLine("Choose an option: ");
+
+            if ("1".equals(postResultChoice) || "2".equals(postResultChoice) || "0".equals(postResultChoice)) {
+                return postResultChoice;
+            }
+
+            printErrorBox(
+                    "ERROR: Invalid option.",
+                    "Please choose 1, 2, or 0."
+            );
+        }
+    }
+
+    /**
+     * Prints the post-result navigation menu.
+     *
+     * @param none This method does not receive arguments.
+     * @return Nothing. It prints directly to the terminal.
+     */
+    private void showPostResultMenu() {
+        System.out.println("\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557");
+        System.out.println("\u2551          WHAT NEXT?                 \u2551");
+        System.out.println("\u2560\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2563");
+        System.out.println("\u2551  [1]  Back to analyzer menu         \u2551");
+        System.out.println("\u2551  [2]  Analyze new content           \u2551");
+        System.out.println("\u2551  [0]  Back to Main Menu            \u2551");
+        System.out.println("\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D");
     }
 
     /**
@@ -305,6 +366,28 @@ public class ContentAnalyzerUI {
         System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
         for (String wrappedErrorLine : wrappedErrorLines) {
             System.out.println("\u2551 " + padRight(wrappedErrorLine, contentWidth) + " \u2551");
+        }
+        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
+    }
+
+    /**
+     * Prints one or more informational lines in a bordered box with wrapped text.
+     *
+     * @param messageLines Info text lines to show.
+     * @return Nothing. It prints directly to the terminal.
+     */
+    private void printInfoBox(String... messageLines) {
+        int contentWidth = 62;
+        List<String> wrappedInfoLines = new ArrayList<>();
+
+        for (String messageLine : messageLines) {
+            String safeLine = messageLine == null ? "" : messageLine;
+            wrappedInfoLines.addAll(wrapText(safeLine, contentWidth));
+        }
+
+        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
+        for (String wrappedInfoLine : wrappedInfoLines) {
+            System.out.println("\u2551 " + padRight(wrappedInfoLine, contentWidth) + " \u2551");
         }
         System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
     }
