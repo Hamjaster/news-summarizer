@@ -1,213 +1,348 @@
 /*
- * This file talks to Gemini and improves raw user queries.
- * It turns everyday text into a short query the summarizer endpoint can use.
- * It handles API setup, request building, and response parsing safely.
- * It returns clear errors when Gemini cannot be reached.
+ * This file talks to Google Gemini AI.
+ * It does three things: turns a user question into good search keywords.
+ * It summarizes news articles and also summarizes pasted text.
+ * It keeps all Gemini communication in one place.
  */
 package com.example.newssummarizer;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Map;
 
 public class GeminiService {
 
-    // Put your real Gemini key in this environment variable before running the app.
-    private static final String GEMINI_API_KEY_ENV = "GEMINI_API_KEY";
-    // Optional environment variable to override the model name.
-    private static final String GEMINI_MODEL_ENV = "GEMINI_MODEL";
-    // Default Gemini model used when GEMINI_MODEL is not provided.
-    private static final String DEFAULT_GEMINI_MODEL = "gemini-2.0-flash";
-    // Official Gemini endpoint base URL.
-    private static final String GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+    private static final String GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyAj5KiDk797XIY6yqVJ59A6KsX_i-yHWoc";
+    private static final String FALLBACK_RESPONSE = "Could not complete request. Please try again.";
 
     private final HttpClient httpClient;
-    private final ObjectMapper objectMapper;
 
     /**
-     * Creates a GeminiService with reusable HTTP and JSON helpers.
-        * Parameters: none.
-        * Returns: a ready service object for Gemini requests.
+     * Creates a reusable Gemini service with one shared HTTP client.
+     *
+     * @param none This constructor does not take inputs.
+     * @return A ready GeminiService object.
      */
     public GeminiService() {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
-     * Sends raw user text to Gemini and returns a short endpoint-ready query.
+     * Takes the user's natural language question and asks Gemini to extract clean search keywords optimized for NewsAPI.
      *
-     * @param rawQuery Original user query from the terminal.
-     * @return Formatted query text ready for the summarizer endpoint.
+     * @param userQuestion The full question typed by the user.
+     * @return A short keyword string such as "Trump Iran statement".
      */
-    public String formatQueryWithGemini(String rawQuery) throws IOException {
-        if (rawQuery == null || rawQuery.isBlank()) {
-            throw new IOException("Error: Query is empty. Please type a search query and try again.");
+    public String formatQueryForNews(String userQuestion) {
+        if (userQuestion == null || userQuestion.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: Your question is empty.",
+                    "Please enter a real question before searching."
+            );
+            return FALLBACK_RESPONSE;
         }
 
-        String apiKey = System.getenv(GEMINI_API_KEY_ENV);
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IOException("Error: Gemini API key is missing. Set GEMINI_API_KEY and try again.");
+        String prompt = "Extract the most important search keywords from this question for a news API query. "
+                + "Return only the keywords, no explanation, no punctuation, just space-separated words. Question: "
+                + userQuestion.trim();
+
+        String geminiResponse = sendPrompt(prompt);
+        if (FALLBACK_RESPONSE.equals(geminiResponse)) {
+            return FALLBACK_RESPONSE;
         }
 
-        String safeQuery = rawQuery.trim();
-        String endpointUrl = buildGeminiEndpoint(apiKey.trim(), getModelName());
+        String cleanedKeywords = geminiResponse
+                .replaceAll("[\\p{Punct}]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
 
+        if (cleanedKeywords.isEmpty()) {
+            printErrorBox(
+                    "ERROR: Gemini returned empty keywords.",
+                    "Please try your question again."
+            );
+            return FALLBACK_RESPONSE;
+        }
+
+        return cleanedKeywords;
+    }
+
+    /**
+     * Takes all article titles and descriptions combined into one text, sends to Gemini, and returns one clear summary of all events.
+     *
+     * @param combinedArticles All article text combined together.
+     * @return A single paragraph summary of the main news events.
+     */
+    public String summarizeArticles(String combinedArticles) {
+        if (combinedArticles == null || combinedArticles.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: No article content is available to summarize.",
+                    "Please search again with another question."
+            );
+            return FALLBACK_RESPONSE;
+        }
+
+        String prompt = "You are a news summarizer. Below are multiple news article titles and descriptions. "
+                + "Read them all and write one clear, concise summary of the main events. "
+                + "Use simple language. Do not use bullet points. Write in paragraph form.\n\n"
+                + "Articles:\n"
+                + combinedArticles;
+
+        return sendPrompt(prompt);
+    }
+
+    /**
+     * Takes any text the user pastes and returns a clear summary that is roughly 25 to 30 percent of the original length.
+     *
+     * @param userText The full text that the user pasted in the terminal.
+     * @return A concise summary that keeps the main meaning.
+     */
+    public String summarizeText(String userText) {
+        if (userText == null || userText.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: Your text input is empty.",
+                    "Please paste text and type END on a new line."
+            );
+            return FALLBACK_RESPONSE;
+        }
+
+        String prompt = "Summarize the following content clearly and concisely. "
+                + "Keep roughly 25 to 30 percent of the original length. "
+                + "Make sure the summary is coherent and reads naturally.\n\n"
+                + "Text:\n"
+                + userText;
+
+        return sendPrompt(prompt);
+    }
+
+    /**
+     * Sends a prompt to Gemini and extracts candidates[0].content.parts[0].text from the response.
+     *
+     * @param prompt The instruction text that should be sent to Gemini.
+     * @return Gemini text output, or a fallback message on failure.
+     */
+    private String sendPrompt(String prompt) {
         try {
-            String requestBody = buildRequestBody(safeQuery);
+            JSONObject payload = new JSONObject();
+            JSONArray contentsArray = new JSONArray();
+            JSONObject contentObject = new JSONObject();
+            JSONArray partsArray = new JSONArray();
+
+            partsArray.put(new JSONObject().put("text", prompt));
+            contentObject.put("parts", partsArray);
+            contentsArray.put(contentObject);
+            payload.put("contents", contentsArray);
+
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(endpointUrl))
+                    .uri(URI.create(GEMINI_ENDPOINT))
                     .timeout(Duration.ofSeconds(60))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
                     .build();
 
-            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String errorBody;
-                try (InputStream responseStream = response.body()) {
-                    errorBody = readResponseBody(responseStream);
-                }
-                throw new IOException("Error: Gemini API returned HTTP " + response.statusCode()
-                        + ". Details: " + shortenForMessage(errorBody));
+                handleGeminiHttpError(response.statusCode(), response.body());
+                return FALLBACK_RESPONSE;
             }
 
-            String formattedQuery;
-            try (InputStream responseStream = response.body()) {
-                formattedQuery = extractFormattedQuery(responseStream, safeQuery);
-            }
-            if (formattedQuery.isBlank()) {
-                throw new IOException("Error: Gemini API returned an empty formatted query. Please try again.");
+            String responseBody = response.body();
+            if (responseBody == null || responseBody.trim().isEmpty()) {
+                printErrorBox(
+                        "ERROR: Gemini returned an empty response.",
+                        "Please try again in a moment."
+                );
+                return FALLBACK_RESPONSE;
             }
 
-            return formattedQuery;
+            JSONObject root = new JSONObject(responseBody);
+            JSONArray candidates = root.optJSONArray("candidates");
+            if (candidates == null || candidates.length() == 0) {
+                printErrorBox(
+                        "ERROR: Gemini did not return any candidates.",
+                        "Please try the request again."
+                );
+                return FALLBACK_RESPONSE;
+            }
+
+            JSONObject firstCandidate = candidates.optJSONObject(0);
+            if (firstCandidate == null) {
+                printErrorBox(
+                        "ERROR: Gemini candidate format is invalid.",
+                        "Please try again."
+                );
+                return FALLBACK_RESPONSE;
+            }
+
+            JSONObject content = firstCandidate.optJSONObject("content");
+            JSONArray parts = content == null ? null : content.optJSONArray("parts");
+            JSONObject firstPart = parts == null ? null : parts.optJSONObject(0);
+            String text = firstPart == null ? "" : firstPart.optString("text", "").trim();
+
+            if (text.isEmpty()) {
+                printErrorBox(
+                        "ERROR: Gemini response text is empty.",
+                        "Please try again."
+                );
+                return FALLBACK_RESPONSE;
+            }
+
+            return text;
+        } catch (HttpTimeoutException exception) {
+            printErrorBox(
+                    "ERROR: Gemini request timed out.",
+                    "Please check your internet and try again."
+            );
+            return FALLBACK_RESPONSE;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IOException("Error: Gemini request was interrupted. Please try again.", exception);
+            printErrorBox(
+                    "ERROR: Gemini request was interrupted.",
+                    "Please try again."
+            );
+            return FALLBACK_RESPONSE;
         } catch (IOException exception) {
-            if (exception.getMessage() != null && exception.getMessage().startsWith("Error:")) {
-                throw exception;
-            }
-            throw new IOException("Error: Could not reach Gemini API. Please check your connection and try again.", exception);
-        } catch (RuntimeException exception) {
-            throw new IOException("Error: Gemini API response could not be read. Please try again.", exception);
+            printErrorBox(
+                    "ERROR: Could not reach Gemini.",
+                    "Please check your connection and try again."
+            );
+            return FALLBACK_RESPONSE;
+        } catch (Exception exception) {
+            printErrorBox(
+                    "ERROR: Gemini returned malformed data.",
+                    "Please try again with a different input."
+            );
+            return FALLBACK_RESPONSE;
         }
     }
 
     /**
-     * Chooses the model name from environment settings or default value.
-        * Parameters: none.
-        * Returns: the Gemini model name to use for requests.
+     * Prints a clear Gemini HTTP error message based on status code and response details.
+     *
+     * @param statusCode The HTTP status code returned by Gemini.
+     * @param responseBody The raw response body from Gemini.
+     * @return Nothing. This method only prints messages.
      */
-    private String getModelName() {
-        String configuredModel = System.getenv(GEMINI_MODEL_ENV);
-        if (configuredModel == null || configuredModel.isBlank()) {
-            return DEFAULT_GEMINI_MODEL;
+    private void handleGeminiHttpError(int statusCode, String responseBody) {
+        String apiMessage = compactMessage(extractApiErrorMessage(responseBody), 180);
+
+        if (statusCode == 429) {
+            printErrorBox(
+                    "ERROR: Gemini rate limit or quota reached (HTTP 429).",
+                    "Please wait a bit or use a different Gemini API key.",
+                    apiMessage.isEmpty() ? "" : "Details: " + apiMessage
+            );
+            return;
         }
-        return configuredModel.trim();
-    }
 
-    /**
-     * Builds the full Gemini endpoint URL including model and API key.
-     *
-     * @param apiKey Valid API key used for Gemini authentication.
-     * @param modelName Gemini model that will process the request.
-     * @return Full endpoint URL string.
-     */
-    private String buildGeminiEndpoint(String apiKey, String modelName) {
-        String encodedModel = URLEncoder.encode(modelName, StandardCharsets.UTF_8);
-        String encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
-        return GEMINI_BASE_URL + "/" + encodedModel + ":generateContent?key=" + encodedKey;
-    }
+        if (statusCode == 401 || statusCode == 403) {
+            printErrorBox(
+                    "ERROR: Gemini API key is invalid or blocked.",
+                    "Please update the key and try again.",
+                    apiMessage.isEmpty() ? "" : "Details: " + apiMessage
+            );
+            return;
+        }
 
-    /**
-     * Builds Gemini JSON payload that asks for a compact endpoint-ready query.
-     *
-     * @param rawQuery Raw terminal query entered by the user.
-     * @return JSON request body string.
-     */
-    private String buildRequestBody(String rawQuery) throws IOException {
-        // Gemini transformation: convert human text into one concise search phrase for an endpoint.
-        String prompt = "Convert the user request into one concise search query for a summarizer API. "
-                + "Return only plain text with no quotes and no markdown. User request: "
-                + rawQuery;
-
-        Map<String, Object> payload = Map.of(
-                "contents", new Object[]{
-                        Map.of("parts", new Object[]{Map.of("text", prompt)})
-                }
+        printErrorBox(
+                "ERROR: Gemini request failed with status " + statusCode + ".",
+                apiMessage.isEmpty() ? "Please try again later." : "Details: " + apiMessage
         );
-
-        return objectMapper.writeValueAsString(payload);
     }
 
     /**
-     * Extracts and normalizes the best query string from Gemini API response JSON.
+     * Extracts a readable error message from Gemini JSON error responses.
      *
-     * @param responseStream Raw Gemini response stream.
-     * @param fallbackQuery Original user query used when Gemini returns no text.
-     * @return Clean formatted query text.
+     * @param responseBody Raw Gemini response body.
+     * @return Error message text when available, otherwise an empty string.
      */
-    private String extractFormattedQuery(InputStream responseStream, String fallbackQuery) throws IOException {
-        JsonNode rootNode = objectMapper.readTree(responseStream);
-        JsonNode candidatesNode = rootNode.path("candidates");
-        if (!candidatesNode.isArray() || candidatesNode.isEmpty()) {
-            return fallbackQuery;
-        }
-
-        JsonNode firstPartNode = candidatesNode.get(0).path("content").path("parts");
-        if (!firstPartNode.isArray() || firstPartNode.isEmpty()) {
-            return fallbackQuery;
-        }
-
-        String modelText = firstPartNode.get(0).path("text").asText("").trim();
-        if (modelText.isBlank()) {
-            return fallbackQuery;
-        }
-
-        return modelText.replace("\n", " ").replaceAll("\\s+", " ").trim();
-    }
-
-    /**
-     * Reads the full HTTP response stream as UTF-8 text.
-     *
-     * @param responseStream Open response stream from the API call.
-     * @return Full response text.
-     */
-    private String readResponseBody(InputStream responseStream) throws IOException {
-        byte[] responseBytes = responseStream.readAllBytes();
-        if (responseBytes.length == 0) {
+    private String extractApiErrorMessage(String responseBody) {
+        if (responseBody == null || responseBody.trim().isEmpty()) {
             return "";
         }
-        return new String(responseBytes, StandardCharsets.UTF_8);
+
+        try {
+            JSONObject root = new JSONObject(responseBody);
+            JSONObject errorObject = root.optJSONObject("error");
+            if (errorObject == null) {
+                return "";
+            }
+
+            return errorObject.optString("message", "").trim();
+        } catch (Exception exception) {
+            return "";
+        }
     }
 
     /**
-     * Shortens large API error text so terminal output stays readable.
+     * Cleans and shortens long API error details for readable terminal output.
      *
-     * @param message Original API message text.
-     * @return Shortened text suitable for user-facing errors.
+     * @param value The original error message text.
+     * @param maxLength Maximum characters to keep.
+     * @return A compact single-line message.
      */
-    private String shortenForMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return "No extra error details were returned.";
+    private String compactMessage(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return "";
         }
-        String cleaned = message.replace("\n", " ").replaceAll("\\s+", " ").trim();
-        if (cleaned.length() <= 240) {
-            return cleaned;
+
+        String compact = value
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (compact.length() <= maxLength) {
+            return compact;
         }
-        return cleaned.substring(0, 240) + "...";
+
+        return compact.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * Prints a clear bordered error message to the terminal.
+     *
+     * @param messageLines The error message lines to show in the box.
+     * @return Nothing. This method only prints to the terminal.
+     */
+    private void printErrorBox(String... messageLines) {
+        int contentWidth = 62;
+        for (String messageLine : messageLines) {
+            if (messageLine != null && messageLine.length() > contentWidth) {
+                contentWidth = messageLine.length();
+            }
+        }
+
+        System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
+        for (String messageLine : messageLines) {
+            String safeMessageLine = messageLine == null ? "" : messageLine;
+            System.out.println("\u2551 " + padRight(safeMessageLine, contentWidth) + " \u2551");
+        }
+        System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
+    }
+
+    /**
+     * Pads text with spaces so all boxed lines align.
+     *
+     * @param value The original text value.
+     * @param width The target width.
+     * @return The padded text.
+     */
+    private String padRight(String value, int width) {
+        if (value.length() >= width) {
+            return value;
+        }
+        return value + " ".repeat(width - value.length());
     }
 }

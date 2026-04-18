@@ -1,96 +1,38 @@
 /*
- * This file starts the app from the terminal.
- * It reads your search query and keeps the app running in a loop.
- * It sends your text to Gemini for cleanup and then to the summarizer API.
- * It prints the final summary or a clear error message.
+ * This is where the app starts.
+ * It shows the main menu to the user and sends them to the right feature based on their choice.
+ * Think of it as the front door of the application.
+ * It keeps startup simple so everything begins in one place.
  */
 package com.example.newssummarizer;
-
-import java.io.IOException;
-import java.util.Scanner;
 
 public class Main {
 
     /**
-     * Runs the terminal application loop and coordinates all program steps.
+     * Starts the application by handing control to the menu screen.
      *
-     * @param args Command-line arguments provided at launch (not required by this app).
-     * @return Nothing.
+     * @param args Command-line arguments passed from the terminal.
+     * @return Nothing. The method exits when the user chooses to quit.
      */
     public static void main(String[] args) {
-        GeminiService geminiService = new GeminiService();
-        SummarizerService summarizerService = new SummarizerService();
-
-        try (Scanner scanner = new Scanner(System.in)) {
-            boolean continueRunning = true;
-
-            while (continueRunning) {
-                String query = readQuery(scanner);
-                if (query.isBlank()) {
-                    System.out.println("Error: Query cannot be empty. Please enter some text.");
-                    continue;
-                }
-
-                try {
-                    String formattedQuery = geminiService.formatQueryWithGemini(query);
-                    String summary = summarizerService.getSummary(formattedQuery);
-
-                    System.out.println("\nFormatted Query: " + formattedQuery);
-                    System.out.println("\nSummary:\n" + summary + "\n");
-                } catch (IOException exception) {
-                    printError(exception.getMessage());
-                } catch (Exception exception) {
-                    printError("Error: Something unexpected happened. Please try again.");
-                }
-
-                continueRunning = askToContinue(scanner);
-            }
+        try {
+            MenuUI menuUI = new MenuUI();
+            menuUI.start();
         } catch (Exception exception) {
-            printError("Error: The application stopped unexpectedly. Please restart and try again.");
+            printStartupError();
         }
     }
 
     /**
-     * Prompts the user for a search query and safely reads one full line.
+     * Prints a bordered startup error when the app cannot begin normally.
      *
-     * @param scanner Shared Scanner instance used to read terminal input.
-     * @return The trimmed user query, or an empty string when input is missing.
+     * @param none This method does not receive arguments.
+     * @return Nothing. It only prints to the terminal.
      */
-    private static String readQuery(Scanner scanner) {
-        System.out.print("Enter your search query: ");
-        String query = scanner.nextLine();
-        if (query == null) {
-            return "";
-        }
-        return query.trim();
-    }
-
-    /**
-     * Asks the user whether to run another search cycle.
-     *
-     * @param scanner Shared Scanner instance used to read terminal input.
-     * @return True when the user wants another run, otherwise false.
-     */
-    private static boolean askToContinue(Scanner scanner) {
-        System.out.print("Do you want to search again? (y/n): ");
-        String answer = scanner.nextLine();
-        if (answer == null) {
-            return false;
-        }
-        return answer.trim().equalsIgnoreCase("y");
-    }
-
-    /**
-     * Prints a friendly error message for users in one consistent format.
-     *
-     * @param message Message text to show to the user.
-     * @return Nothing.
-     */
-    private static void printError(String message) {
-        if (message == null || message.isBlank()) {
-            System.out.println("Error: An unknown problem occurred.");
-            return;
-        }
-        System.out.println(message);
+    private static void printStartupError() {
+        System.out.println("\u2554" + "\u2550".repeat(54) + "\u2557");
+        System.out.println("\u2551  ERROR: The application could not start correctly.    \u2551");
+        System.out.println("\u2551  Please try running it again.                         \u2551");
+        System.out.println("\u255A" + "\u2550".repeat(54) + "\u255D");
     }
 }
