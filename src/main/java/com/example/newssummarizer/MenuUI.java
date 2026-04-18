@@ -6,6 +6,8 @@
  */
 package com.example.newssummarizer;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.Month;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,7 +29,12 @@ public class MenuUI {
     private static final int SUMMARY_TEXT_WIDTH = 40;
     private static final DateTimeFormatter OUTPUT_DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final List<DateTimeFormatter> SUPPORTED_DATE_FORMATS = createDateFormatters();
+    private static final String DATE_TOKEN_REGEX = "(?:\\d{1,2}(?:st|nd|rd|th)?\\s+[a-zA-Z]+\\s+\\d{4}|[a-zA-Z]+\\s+\\d{1,2}(?:st|nd|rd|th)?\\s+\\d{4}|\\d{1,2}/\\d{1,2}/\\d{4}|\\d{4}-\\d{1,2}-\\d{1,2})";
     private static final Pattern COMPACT_RANGE_PATTERN = Pattern.compile("(?i)^\\s*(\\d{1,2})\\s*-\\s*(\\d{1,2})\\s+([a-zA-Z]+)\\s+(\\d{4})\\s*$");
+    private static final Pattern COMPACT_RANGE_IN_TEXT_PATTERN = Pattern.compile("(?i)\\b\\d{1,2}\\s*-\\s*\\d{1,2}\\s+[a-zA-Z]+\\s+\\d{4}\\b");
+    private static final Pattern EXPLICIT_RANGE_IN_TEXT_PATTERN = Pattern.compile("(?i)\\b(" + DATE_TOKEN_REGEX + ")\\b\\s*(?:to|through|until|-)\\s*\\b(" + DATE_TOKEN_REGEX + ")\\b");
+    private static final Pattern DATE_TOKEN_IN_TEXT_PATTERN = Pattern.compile("(?i)\\b" + DATE_TOKEN_REGEX + "\\b");
+    private static final Pattern LAST_X_DAYS_PATTERN = Pattern.compile("(?i)\\blast\\s+(\\d{1,2})\\s+days\\b");
     private static final String GEMINI_FALLBACK_RESPONSE = "Could not complete request. Please try again.";
 
     private final Scanner scanner;
@@ -63,13 +71,15 @@ public class MenuUI {
                     handleNewsSearchFlow();
                 } else if ("2".equals(menuChoice)) {
                     handleTextSummarizerFlow();
+                } else if ("3".equals(menuChoice)) {
+                    handleContentAnalyzerFlow();
                 } else if ("0".equals(menuChoice)) {
                     keepRunning = false;
                     System.out.println("Goodbye.");
                 } else {
                     printErrorBox(
                             "ERROR: Invalid menu option.",
-                            "Please choose 1, 2, or 0."
+                            "Please choose 1, 2, 3, or 0."
                     );
                 }
             }
@@ -95,6 +105,7 @@ public class MenuUI {
         System.out.println("\u2560" + "\u2550".repeat(38) + "\u2563");
         System.out.println("\u2551  [1]  Search & Summarize News        \u2551");
         System.out.println("\u2551  [2]  Summarize My Own Text          \u2551");
+        System.out.println("\u2551  [3]  Analyze Content                \u2551");
         System.out.println("\u2551  [0]  Exit                           \u2551");
         System.out.println("\u255A" + "\u2550".repeat(38) + "\u255D");
     }
@@ -119,19 +130,24 @@ public class MenuUI {
                     continue;
                 }
 
-                DateRangeSelection dateRangeSelection = askForValidDateRange();
-                String optimizedKeywords = geminiService.formatQueryForNews(userQuestion);
+                DateRangeSelection dateRangeSelection = deriveDateRangeFromQuestion(userQuestion);
+                if (dateRangeSelection == null) {
+                    continue;
+                }
+
+                String keywordSourceText = sanitizeQueryForKeywordExtraction(userQuestion);
+                String optimizedKeywords = runGeminiQuietly(() -> geminiService.formatQueryForNews(keywordSourceText));
                 boolean usedGeminiKeywordFallback = isGeminiFallbackResponse(optimizedKeywords);
 
                 if (usedGeminiKeywordFallback) {
-                    printErrorBox(
-                            "INFO: Gemini keyword extraction is unavailable right now.",
+                    printGeminiUnavailableNotice(
+                            "keyword extraction",
                             "Using direct keywords from your question for this search."
                     );
                 }
 
                 String keywordsForNews = usedGeminiKeywordFallback
-                        ? buildFallbackKeywords(userQuestion)
+                        ? buildFallbackKeywords(keywordSourceText)
                         : optimizedKeywords;
 
                 String combinedArticles = newsApiService.fetchArticles(
@@ -154,8 +170,12 @@ public class MenuUI {
                 } else if (usedGeminiKeywordFallback) {
                     summary = buildLocalArticleSummary(combinedArticles);
                 } else {
-                    summary = geminiService.summarizeArticles(combinedArticles);
+                    summary = runGeminiQuietly(() -> geminiService.summarizeArticles(combinedArticles));
                     if (isGeminiFallbackResponse(summary)) {
+                        printGeminiUnavailableNotice(
+                                "article summarization",
+                                "Showing a local quick summary from headlines instead."
+                        );
                         summary = buildLocalArticleSummary(combinedArticles);
                     }
                 }
@@ -192,8 +212,12 @@ public class MenuUI {
                             "Please paste your content and type END on a new line."
                     );
                 } else {
-                    String summary = geminiService.summarizeText(userText);
+                    String summary = runGeminiQuietly(() -> geminiService.summarizeText(userText));
                     if (isGeminiFallbackResponse(summary)) {
+                        printGeminiUnavailableNotice(
+                                "text summarization",
+                                "Showing a local quick summary instead."
+                        );
                         summary = buildLocalTextSummary(userText);
                     }
                     printSummaryBox(summary);
@@ -210,44 +234,190 @@ public class MenuUI {
     }
 
     /**
-     * Asks for a date or date range until the user provides a valid value.
+     * Runs option 3 where users can analyze lyrics, book excerpts, or newspaper articles.
      *
      * @param none This method does not receive arguments.
-     * @return A valid date range selection for NewsAPI requests.
+     * @return Nothing. Control returns to main menu after the analyzer flow ends.
      */
-    private DateRangeSelection askForValidDateRange() {
-        while (true) {
-            String dateInput = readLine("Enter a date or date range (e.g. 17 April 2026 or 10-17 April 2026). Press Enter to use last 3 weeks as default: ");
-
-            LocalDate today = LocalDate.now();
-            if (dateInput.isEmpty()) {
-                return new DateRangeSelection(today.minusDays(21), today);
-            }
-
-            DateRangeSelection parsedRange = parseDateInput(dateInput);
-            if (parsedRange == null) {
-                printErrorBox(
-                        "ERROR: Could not understand that date format.",
-                        "Please use formats like 17 April 2026, April 17 2026, 17/04/2026, or 2026-04-17."
-                );
-                continue;
-            }
-
-            if (isDateRangeInFuture(parsedRange)) {
-                printErrorBox(
-                        "ERROR: Future dates are not allowed.",
-                        "Please enter today or a past date."
-                );
-                continue;
-            }
-
-            if (isDateRangeOlderThanThirtyDays(parsedRange)) {
-                showNewsApiDateError();
-                continue;
-            }
-
-            return parsedRange;
+    private void handleContentAnalyzerFlow() {
+        try {
+            ContentAnalyzerUI contentAnalyzerUI = new ContentAnalyzerUI(scanner, geminiService);
+            contentAnalyzerUI.start();
+        } catch (Exception exception) {
+            printErrorBox(
+                    "ERROR: Could not open the content analyzer.",
+                    "Please try again."
+            );
         }
+    }
+
+    /**
+     * Derives date range directly from the question text or falls back to last 3 weeks.
+     *
+     * @param userQuestion The full question typed by the user.
+     * @return A validated date range, or null when the extracted range is invalid.
+     */
+    private DateRangeSelection deriveDateRangeFromQuestion(String userQuestion) {
+        DateRangeSelection extractedRange = extractDateRangeFromQuestion(userQuestion);
+        if (extractedRange == null) {
+            LocalDate today = LocalDate.now();
+            return new DateRangeSelection(today.minusDays(21), today);
+        }
+
+        if (isDateRangeInFuture(extractedRange)) {
+            printErrorBox(
+                    "ERROR: Future dates are not allowed.",
+                    "Please ask with today or a past date in your question."
+            );
+            return null;
+        }
+
+        if (isDateRangeOlderThanThirtyDays(extractedRange)) {
+            showNewsApiDateError();
+            return null;
+        }
+
+        return extractedRange;
+    }
+
+    /**
+     * Extracts date or date range directly from natural language question text.
+     *
+     * @param userQuestion The full question entered by the user.
+     * @return Parsed date range when found, otherwise null.
+     */
+    private DateRangeSelection extractDateRangeFromQuestion(String userQuestion) {
+        if (userQuestion == null || userQuestion.isBlank()) {
+            return null;
+        }
+
+        DateRangeSelection relativeRange = extractRelativeDateRange(userQuestion);
+        if (relativeRange != null) {
+            return relativeRange;
+        }
+
+        String normalizedQuestion = userQuestion
+                .replace(",", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        Matcher compactMatcher = COMPACT_RANGE_IN_TEXT_PATTERN.matcher(normalizedQuestion);
+        if (compactMatcher.find()) {
+            DateRangeSelection parsedCompactRange = parseDateInput(compactMatcher.group());
+            if (parsedCompactRange != null) {
+                return parsedCompactRange;
+            }
+        }
+
+        Matcher explicitRangeMatcher = EXPLICIT_RANGE_IN_TEXT_PATTERN.matcher(normalizedQuestion);
+        if (explicitRangeMatcher.find()) {
+            String rangeText = explicitRangeMatcher.group(1) + " to " + explicitRangeMatcher.group(2);
+            DateRangeSelection parsedExplicitRange = parseDateInput(rangeText);
+            if (parsedExplicitRange != null) {
+                return parsedExplicitRange;
+            }
+        }
+
+        List<LocalDate> detectedDates = new ArrayList<>();
+        Matcher dateTokenMatcher = DATE_TOKEN_IN_TEXT_PATTERN.matcher(normalizedQuestion);
+        while (dateTokenMatcher.find()) {
+            String dateToken = dateTokenMatcher.group();
+            try {
+                LocalDate parsedDate = parseSingleDate(dateToken);
+                if (!detectedDates.contains(parsedDate)) {
+                    detectedDates.add(parsedDate);
+                }
+            } catch (DateTimeParseException exception) {
+                // Ignore unmatched fragments and keep scanning.
+            }
+
+            if (detectedDates.size() >= 2) {
+                break;
+            }
+        }
+
+        if (detectedDates.isEmpty()) {
+            return null;
+        }
+
+        if (detectedDates.size() == 1) {
+            return new DateRangeSelection(detectedDates.get(0), detectedDates.get(0));
+        }
+
+        return toDateRange(detectedDates.get(0), detectedDates.get(1));
+    }
+
+    /**
+     * Extracts relative date expressions such as today, yesterday, or last X days.
+     *
+     * @param userQuestion The question text to inspect.
+     * @return A derived range for relative terms, or null when not present.
+     */
+    private DateRangeSelection extractRelativeDateRange(String userQuestion) {
+        String lowerText = userQuestion.toLowerCase(Locale.ENGLISH);
+        LocalDate today = LocalDate.now();
+
+        Matcher lastDaysMatcher = LAST_X_DAYS_PATTERN.matcher(lowerText);
+        if (lastDaysMatcher.find()) {
+            try {
+                int requestedDays = Integer.parseInt(lastDaysMatcher.group(1));
+                int boundedDays = Math.max(1, Math.min(requestedDays, 30));
+                return new DateRangeSelection(today.minusDays(boundedDays - 1L), today);
+            } catch (NumberFormatException exception) {
+                // Ignore invalid relative day counts.
+            }
+        }
+
+        if (lowerText.contains("last week")) {
+            return new DateRangeSelection(today.minusDays(7), today);
+        }
+
+        if (lowerText.contains("yesterday")) {
+            LocalDate yesterday = today.minusDays(1);
+            return new DateRangeSelection(yesterday, yesterday);
+        }
+
+        if (lowerText.contains("today")) {
+            return new DateRangeSelection(today, today);
+        }
+
+        return null;
+    }
+
+    /**
+     * Reorders two dates into a valid ascending date range.
+     *
+     * @param firstDate The first parsed date.
+     * @param secondDate The second parsed date.
+     * @return A normalized date range with fromDate less than or equal to toDate.
+     */
+    private DateRangeSelection toDateRange(LocalDate firstDate, LocalDate secondDate) {
+        if (firstDate.isAfter(secondDate)) {
+            return new DateRangeSelection(secondDate, firstDate);
+        }
+        return new DateRangeSelection(firstDate, secondDate);
+    }
+
+    /**
+     * Removes date expressions from user question before keyword extraction.
+     *
+     * @param userQuestion Raw user question text.
+     * @return Question text with obvious date fragments removed.
+     */
+    private String sanitizeQueryForKeywordExtraction(String userQuestion) {
+        String sanitized = userQuestion == null ? "" : userQuestion;
+        sanitized = COMPACT_RANGE_IN_TEXT_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = EXPLICIT_RANGE_IN_TEXT_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = DATE_TOKEN_IN_TEXT_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = LAST_X_DAYS_PATTERN.matcher(sanitized).replaceAll(" ");
+        sanitized = sanitized.replaceAll("(?i)\\btoday\\b|\\byesterday\\b|\\blast\\s+week\\b", " ");
+        sanitized = sanitized.replaceAll("\\s+", " ").trim();
+
+        if (sanitized.isEmpty()) {
+            return userQuestion == null ? "" : userQuestion.trim();
+        }
+
+        return sanitized;
     }
 
     /**
@@ -354,7 +524,10 @@ public class MenuUI {
      */
     private LocalDate parseSingleDate(String rawDateValue) {
         String normalizedValue = rawDateValue == null ? "" : rawDateValue.trim();
-        normalizedValue = normalizedValue.replace(",", " ").replaceAll("\\s+", " ");
+        normalizedValue = normalizedValue
+            .replace(",", " ")
+            .replaceAll("(?i)\\b(\\d{1,2})(st|nd|rd|th)\\b", "$1")
+            .replaceAll("\\s+", " ");
 
         for (DateTimeFormatter formatter : SUPPORTED_DATE_FORMATS) {
             try {
@@ -528,16 +701,16 @@ public class MenuUI {
      */
     private void printErrorBox(String... messageLines) {
         int contentWidth = 62;
+        List<String> wrappedErrorLines = new ArrayList<>();
+
         for (String messageLine : messageLines) {
-            if (messageLine != null && messageLine.length() > contentWidth) {
-                contentWidth = messageLine.length();
-            }
+            String safeMessageLine = messageLine == null ? "" : messageLine;
+            wrappedErrorLines.addAll(wrapText(safeMessageLine, contentWidth));
         }
 
         System.out.println("\u2554" + "\u2550".repeat(contentWidth + 2) + "\u2557");
-        for (String messageLine : messageLines) {
-            String safeMessageLine = messageLine == null ? "" : messageLine;
-            System.out.println("\u2551 " + padRight(safeMessageLine, contentWidth) + " \u2551");
+        for (String wrappedErrorLine : wrappedErrorLines) {
+            System.out.println("\u2551 " + padRight(wrappedErrorLine, contentWidth) + " \u2551");
         }
         System.out.println("\u255A" + "\u2550".repeat(contentWidth + 2) + "\u255D");
     }
@@ -576,6 +749,31 @@ public class MenuUI {
     }
 
     /**
+     * Runs Gemini calls while suppressing malformed internal console boxes.
+     *
+     * @param geminiCall A callable block that returns Gemini text output.
+     * @return Gemini output text, or fallback response on failure.
+     */
+    private String runGeminiQuietly(Supplier<String> geminiCall) {
+        PrintStream originalOut = System.out;
+        ByteArrayOutputStream ignoredOutput = new ByteArrayOutputStream();
+        PrintStream quietOut = null;
+
+        try {
+            quietOut = new PrintStream(ignoredOutput, true, "UTF-8");
+            System.setOut(quietOut);
+            return geminiCall.get();
+        } catch (Exception exception) {
+            return GEMINI_FALLBACK_RESPONSE;
+        } finally {
+            System.setOut(originalOut);
+            if (quietOut != null) {
+                quietOut.close();
+            }
+        }
+    }
+
+    /**
      * Checks if a Gemini response contains the common fallback failure message.
      *
      * @param responseText The response text returned from GeminiService.
@@ -586,6 +784,44 @@ public class MenuUI {
             return true;
         }
         return GEMINI_FALLBACK_RESPONSE.equalsIgnoreCase(responseText.trim());
+    }
+
+    /**
+     * Prints one standardized Gemini-unavailable notice with fallback action and details.
+     *
+     * @param failedStep The Gemini capability that failed.
+     * @param fallbackAction The local fallback action used by this app.
+     * @return Nothing. This method prints directly to the terminal.
+     */
+    private void printGeminiUnavailableNotice(String failedStep, String fallbackAction) {
+        String detailsLine = buildGeminiDetailsLine();
+        if (detailsLine.isEmpty()) {
+            printErrorBox(
+                    "INFO: Gemini " + failedStep + " is unavailable right now.",
+                    fallbackAction
+            );
+            return;
+        }
+
+        printErrorBox(
+                "INFO: Gemini " + failedStep + " is unavailable right now.",
+                fallbackAction,
+                detailsLine
+        );
+    }
+
+    /**
+     * Builds one compact details line from the most recent Gemini failure state.
+     *
+     * @param none This method does not receive arguments.
+     * @return One details line or empty text when no failure details are available.
+     */
+    private String buildGeminiDetailsLine() {
+        String reason = geminiService.getLastFailureReason();
+        if (reason == null || reason.isBlank()) {
+            return "";
+        }
+        return "Details: " + reason;
     }
 
     /**

@@ -21,11 +21,13 @@ import java.time.Duration;
 public class GeminiService {
 
     private static final String GEMINI_API_KEY_ENV = "GEMINI_API_KEY";
-    private static final String GEMINI_ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=";
+    private static final String GEMINI_ENDPOINT_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=";
     private static final String FALLBACK_RESPONSE = "Could not complete request. Please try again.";
+    private static final int[] RATE_LIMIT_RETRY_DELAYS_SECONDS = {15, 30, 60};
 
     private final HttpClient httpClient;
     private final String geminiApiKey;
+    private volatile String lastFailureReason;
 
     /**
      * Creates a reusable Gemini service with one shared HTTP client.
@@ -38,8 +40,11 @@ public class GeminiService {
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
 
+        this.lastFailureReason = "";
+
         String configuredGeminiKey = System.getenv(GEMINI_API_KEY_ENV);
         if (configuredGeminiKey == null || configuredGeminiKey.trim().isEmpty()) {
+            setLastFailureReason("GEMINI_API_KEY is missing.");
             printErrorBox(
                     "ERROR: GEMINI_API_KEY is missing.",
                     "Please check your .env file and set GEMINI_API_KEY.",
@@ -51,6 +56,19 @@ public class GeminiService {
         }
 
         this.geminiApiKey = configuredGeminiKey.trim();
+    }
+
+    /**
+     * Returns the most recent Gemini failure reason in user-readable text.
+     *
+     * @param none This method does not receive arguments.
+     * @return A concise failure reason, or an empty string when no recent failure exists.
+     */
+    public String getLastFailureReason() {
+        if (lastFailureReason == null) {
+            return "";
+        }
+        return lastFailureReason.trim();
     }
 
     /**
@@ -149,6 +167,8 @@ public class GeminiService {
      */
     private String sendPrompt(String prompt) {
         try {
+            setLastFailureReason("");
+
             JSONObject payload = new JSONObject();
             JSONArray contentsArray = new JSONArray();
             JSONObject contentObject = new JSONObject();
@@ -166,7 +186,28 @@ public class GeminiService {
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString(), StandardCharsets.UTF_8))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = null;
+            for (int attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_SECONDS.length; attempt++) {
+                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+
+                if (response.statusCode() == 429 && attempt < RATE_LIMIT_RETRY_DELAYS_SECONDS.length) {
+                    int waitSeconds = RATE_LIMIT_RETRY_DELAYS_SECONDS[attempt];
+                    printRateLimitRetryBox(waitSeconds);
+                    Thread.sleep(waitSeconds * 1000L);
+                    continue;
+                }
+
+                break;
+            }
+
+            if (response == null) {
+                setLastFailureReason("Gemini request failed before receiving a response.");
+                printErrorBox(
+                        "ERROR: Gemini request failed before receiving a response.",
+                        "Please try again in a moment."
+                );
+                return FALLBACK_RESPONSE;
+            }
 
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 handleGeminiHttpError(response.statusCode(), response.body());
@@ -175,6 +216,7 @@ public class GeminiService {
 
             String responseBody = response.body();
             if (responseBody == null || responseBody.trim().isEmpty()) {
+                setLastFailureReason("Gemini returned an empty response.");
                 printErrorBox(
                         "ERROR: Gemini returned an empty response.",
                         "Please try again in a moment."
@@ -185,6 +227,7 @@ public class GeminiService {
             JSONObject root = new JSONObject(responseBody);
             JSONArray candidates = root.optJSONArray("candidates");
             if (candidates == null || candidates.length() == 0) {
+                setLastFailureReason("Gemini returned no candidates.");
                 printErrorBox(
                         "ERROR: Gemini did not return any candidates.",
                         "Please try the request again."
@@ -194,6 +237,7 @@ public class GeminiService {
 
             JSONObject firstCandidate = candidates.optJSONObject(0);
             if (firstCandidate == null) {
+                setLastFailureReason("Gemini candidate format is invalid.");
                 printErrorBox(
                         "ERROR: Gemini candidate format is invalid.",
                         "Please try again."
@@ -207,6 +251,7 @@ public class GeminiService {
             String text = firstPart == null ? "" : firstPart.optString("text", "").trim();
 
             if (text.isEmpty()) {
+                setLastFailureReason("Gemini response text is empty.");
                 printErrorBox(
                         "ERROR: Gemini response text is empty.",
                         "Please try again."
@@ -216,6 +261,7 @@ public class GeminiService {
 
             return text;
         } catch (HttpTimeoutException exception) {
+            setLastFailureReason("Gemini request timed out.");
             printErrorBox(
                     "ERROR: Gemini request timed out.",
                     "Please check your internet and try again."
@@ -223,18 +269,21 @@ public class GeminiService {
             return FALLBACK_RESPONSE;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            setLastFailureReason("Gemini request was interrupted.");
             printErrorBox(
                     "ERROR: Gemini request was interrupted.",
                     "Please try again."
             );
             return FALLBACK_RESPONSE;
         } catch (IOException exception) {
+            setLastFailureReason("Could not reach Gemini service.");
             printErrorBox(
                     "ERROR: Could not reach Gemini.",
                     "Please check your connection and try again."
             );
             return FALLBACK_RESPONSE;
         } catch (Exception exception) {
+            setLastFailureReason("Gemini returned malformed data.");
             printErrorBox(
                     "ERROR: Gemini returned malformed data.",
                     "Please try again with a different input."
@@ -254,6 +303,9 @@ public class GeminiService {
         String apiMessage = compactMessage(extractApiErrorMessage(responseBody), 180);
 
         if (statusCode == 429) {
+            setLastFailureReason(apiMessage.isEmpty()
+                    ? "Gemini quota or rate limit reached (HTTP 429)."
+                    : "Gemini quota or rate limit reached (HTTP 429): " + apiMessage);
             printErrorBox(
                     "ERROR: Gemini rate limit or quota reached (HTTP 429).",
                     "Please wait a bit or use a different Gemini API key.",
@@ -263,6 +315,9 @@ public class GeminiService {
         }
 
         if (statusCode == 401 || statusCode == 403) {
+            setLastFailureReason(apiMessage.isEmpty()
+                ? "Gemini API key is invalid or blocked (HTTP " + statusCode + ")."
+                : "Gemini API key is invalid or blocked (HTTP " + statusCode + "): " + apiMessage);
             printErrorBox(
                     "ERROR: Gemini API key is invalid or blocked.",
                     "Please update the key and try again.",
@@ -270,6 +325,10 @@ public class GeminiService {
             );
             return;
         }
+
+            setLastFailureReason(apiMessage.isEmpty()
+                ? "Gemini request failed with status " + statusCode + "."
+                : "Gemini request failed with status " + statusCode + ": " + apiMessage);
 
         printErrorBox(
                 "ERROR: Gemini request failed with status " + statusCode + ".",
@@ -324,6 +383,31 @@ public class GeminiService {
         }
 
         return compact.substring(0, maxLength) + "...";
+    }
+
+    /**
+     * Prints the requested bordered wait message before retrying on HTTP 429.
+     *
+     * @param waitSeconds Seconds to wait before the next retry attempt.
+     * @return Nothing. This method prints directly to the terminal.
+     */
+    private void printRateLimitRetryBox(int waitSeconds) {
+        int contentWidth = 42;
+        String message = "  Rate limit hit. Retrying in " + waitSeconds + "s...";
+
+        System.out.println("\u2554" + "\u2550".repeat(contentWidth) + "\u2557");
+        System.out.println("\u2551" + padRight(message, contentWidth) + "\u2551");
+        System.out.println("\u255A" + "\u2550".repeat(contentWidth) + "\u255D");
+    }
+
+    /**
+     * Stores the most recent Gemini failure reason used by UI fallbacks.
+     *
+     * @param reason Failure reason text.
+     * @return Nothing. This method updates in-memory state only.
+     */
+    private void setLastFailureReason(String reason) {
+        this.lastFailureReason = reason == null ? "" : reason.trim();
     }
 
     /**
