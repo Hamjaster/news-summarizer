@@ -9,13 +9,8 @@ package com.example.newssummarizer;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Scanner;
-import java.util.Set;
 
 public class MorningBriefing {
 
@@ -32,6 +27,16 @@ public class MorningBriefing {
     private final Scanner scanner;
     private final GeminiService geminiService;
     private final NewsApiService newsApiService;
+
+    private static final class FetchResult {
+        private final String combinedArticles;
+        private final String sourceLabel;
+
+        private FetchResult(String combinedArticles, String sourceLabel) {
+            this.combinedArticles = combinedArticles;
+            this.sourceLabel = sourceLabel;
+        }
+    }
 
     /**
      * Creates the Morning Briefing controller with shared services.
@@ -58,17 +63,8 @@ public class MorningBriefing {
             showMorningBanner();
 
             LocalDate today = LocalDate.now();
-            LocalDate usedDate = today;
-            String sourceLabel = "today";
-
-            String combinedArticles = fetchArticlesForDate("world news today", today);
-            if (isNoArticles(combinedArticles)) {
-                usedDate = today.minusDays(1);
-                sourceLabel = "yesterday";
-                combinedArticles = fetchArticlesForDate("world news today", usedDate);
-            }
-
-            if (isNoArticles(combinedArticles) || combinedArticles == null || combinedArticles.isBlank()) {
+            FetchResult morningArticles = fetchMorningArticlesWithFallback(today);
+            if (!hasArticles(morningArticles.combinedArticles)) {
                 printErrorBox(
                         "ERROR: Morning Briefing could not find enough articles.",
                         "Please try again in a few minutes."
@@ -76,7 +72,7 @@ public class MorningBriefing {
                 return;
             }
 
-            String briefingSummary = summarizeMorningBriefing(combinedArticles);
+            String briefingSummary = summarizeMorningBriefing(morningArticles.combinedArticles);
             TerminalUtils.printSummaryBox(
                     "MORNING BRIEFING",
                     briefingSummary,
@@ -86,15 +82,13 @@ public class MorningBriefing {
                     RESET
             );
 
-            TerminalUtils.printWordStats(combinedArticles, briefingSummary, YELLOW, RESET);
+            TerminalUtils.printWordStats(morningArticles.combinedArticles, briefingSummary, YELLOW, RESET);
 
-            int articleCount = countArticles(combinedArticles);
-            String sourceLine = "Sources combined: " + articleCount + " articles from " + sourceLabel;
+            int articleCount = countArticles(morningArticles.combinedArticles);
+            String sourceLine = "Sources combined: " + articleCount + " articles from " + morningArticles.sourceLabel;
             TerminalUtils.printCenteredLine(sourceLine, GREEN + BOLD, RESET);
-
-            String topKeywords = resolveTopKeywords(briefingSummary);
-            TerminalUtils.printTopKeywords(topKeywords, YELLOW, BOLD, RESET);
             TerminalUtils.printGreenDivider(GREEN, RESET);
+            System.out.println();
 
             promptDeepDive(today);
         } catch (Exception exception) {
@@ -112,15 +106,10 @@ public class MorningBriefing {
      * @return Nothing. It prints directly to terminal.
      */
     private void showMorningBanner() {
-        System.out.println();
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("MORNING BRIEFING", CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("Fetching today's top stories from around the world...", CYAN, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
-        System.out.println();
     }
 
     /**
@@ -132,7 +121,58 @@ public class MorningBriefing {
      */
     private String fetchArticlesForDate(String keywords, LocalDate date) {
         String dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE);
-        return newsApiService.fetchArticles(keywords, dateText, dateText);
+        return newsApiService.fetchArticles(keywords, dateText, dateText, false);
+    }
+
+    /**
+     * Tries multiple date/query combinations to avoid empty morning briefings.
+     *
+     * @param today Current date used as anchor.
+     * @return Best fetch result found.
+     */
+    private FetchResult fetchMorningArticlesWithFallback(LocalDate today) {
+        LocalDate yesterday = today.minusDays(1);
+        LocalDate threeDaysAgo = today.minusDays(2);
+        LocalDate sevenDaysAgo = today.minusDays(6);
+
+        List<String> queries = new ArrayList<>();
+        queries.add("world news today");
+        queries.add("world news");
+        queries.add("international news");
+        queries.add("global news");
+        queries.add("breaking news");
+        queries.add("news");
+
+        for (String query : queries) {
+            String todayArticles = fetchArticlesForDate(query, today);
+            if (hasArticles(todayArticles)) {
+                return new FetchResult(todayArticles, "today");
+            }
+
+            String yesterdayArticles = fetchArticlesForDate(query, yesterday);
+            if (hasArticles(yesterdayArticles)) {
+                return new FetchResult(yesterdayArticles, "yesterday");
+            }
+        }
+
+        String recentFrom = threeDaysAgo.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String recentTo = today.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        for (String query : queries) {
+            String recentArticles = newsApiService.fetchArticles(query, recentFrom, recentTo, false);
+            if (hasArticles(recentArticles)) {
+                return new FetchResult(recentArticles, "last 3 days");
+            }
+        }
+
+        String weeklyFrom = sevenDaysAgo.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        for (String query : queries) {
+            String weeklyArticles = newsApiService.fetchArticles(query, weeklyFrom, recentTo, false);
+            if (hasArticles(weeklyArticles)) {
+                return new FetchResult(weeklyArticles, "last 7 days");
+            }
+        }
+
+        return new FetchResult(NO_ARTICLES_MESSAGE, "recent days");
     }
 
     /**
@@ -161,7 +201,7 @@ public class MorningBriefing {
      */
     private void promptDeepDive(LocalDate today) {
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("Want to dig deeper into any of these topics?", WHITE, RESET);
+        TerminalUtils.printCenteredLine("Want to dig deeper into any of these topics", WHITE, RESET);
         TerminalUtils.printCenteredLine("Type a topic and press Enter, or press Enter to go back to main menu:", WHITE, RESET);
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
 
@@ -182,28 +222,19 @@ public class MorningBriefing {
      */
     private void runTopicDeepDive(String topic, LocalDate date) {
         try {
-            String dateText = date.format(DateTimeFormatter.ISO_LOCAL_DATE);
-            String combinedArticles = newsApiService.fetchArticles(topic, dateText, dateText);
+            FetchResult topicArticles = fetchTopicArticlesWithFallback(topic, date);
 
-            if (isNoArticles(combinedArticles)) {
+            if (!hasArticles(topicArticles.combinedArticles)) {
                 printErrorBox(
-                        "ERROR: No same-day articles were found for that topic.",
+                        "ERROR: No recent articles were found for that topic.",
                         "Try another topic keyword."
                 );
                 return;
             }
 
-            if (combinedArticles == null || combinedArticles.isBlank()) {
-                printErrorBox(
-                        "ERROR: Topic search failed due to a NewsAPI issue.",
-                        "Please try again."
-                );
-                return;
-            }
-
-            String summary = geminiService.summarizeArticles(combinedArticles);
+            String summary = geminiService.summarizeArticles(topicArticles.combinedArticles);
             if (isGeminiFallback(summary)) {
-                summary = buildLocalHeadlineSummary(combinedArticles);
+                summary = buildLocalHeadlineSummary(topicArticles.combinedArticles);
             }
 
             TerminalUtils.printSummaryBox(
@@ -215,17 +246,14 @@ public class MorningBriefing {
                     RESET
             );
 
-            TerminalUtils.printWordStats(combinedArticles, summary, YELLOW, RESET);
+                    TerminalUtils.printWordStats(topicArticles.combinedArticles, summary, YELLOW, RESET);
 
-            int articleCount = countArticles(combinedArticles);
+                    int articleCount = countArticles(topicArticles.combinedArticles);
             TerminalUtils.printCenteredLine(
-                    "Sources combined: " + articleCount + " articles from today",
+                        "Sources combined: " + articleCount + " articles from " + topicArticles.sourceLabel,
                     GREEN + BOLD,
                     RESET
             );
-
-            String topKeywords = resolveTopKeywords(summary);
-            TerminalUtils.printTopKeywords(topKeywords, YELLOW, BOLD, RESET);
             TerminalUtils.printGreenDivider(GREEN, RESET);
         } catch (Exception exception) {
             printErrorBox(
@@ -236,17 +264,54 @@ public class MorningBriefing {
     }
 
     /**
-     * Resolves top keywords via Gemini first, then falls back to local extraction.
+     * Tries topic fetches in a wider range before giving up.
      *
-     * @param summaryText Summary content used for keyword extraction.
-     * @return Comma-separated keyword text.
+     * @param topic Topic entered by the user.
+     * @param today Current date used as anchor.
+     * @return Best topic fetch result found.
      */
-    private String resolveTopKeywords(String summaryText) {
-        String keywords = geminiService.extractTopKeywords(summaryText);
-        if (isGeminiFallback(keywords) || keywords.isBlank()) {
-            return buildLocalKeywords(summaryText);
+    private FetchResult fetchTopicArticlesWithFallback(String topic, LocalDate today) {
+        LocalDate yesterday = today.minusDays(1);
+        LocalDate threeDaysAgo = today.minusDays(2);
+        LocalDate sevenDaysAgo = today.minusDays(6);
+
+        String todayText = today.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String yesterdayText = yesterday.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String threeDaysAgoText = threeDaysAgo.format(DateTimeFormatter.ISO_LOCAL_DATE);
+
+        String todayArticles = newsApiService.fetchArticles(topic, todayText, todayText, false);
+        if (hasArticles(todayArticles)) {
+            return new FetchResult(todayArticles, "today");
         }
-        return keywords;
+
+        String yesterdayArticles = newsApiService.fetchArticles(topic, yesterdayText, yesterdayText, false);
+        if (hasArticles(yesterdayArticles)) {
+            return new FetchResult(yesterdayArticles, "yesterday");
+        }
+
+        String recentArticles = newsApiService.fetchArticles(topic, threeDaysAgoText, todayText, false);
+        if (hasArticles(recentArticles)) {
+            return new FetchResult(recentArticles, "last 3 days");
+        }
+
+        String withNewsKeyword = topic + " news";
+        String recentWithKeyword = newsApiService.fetchArticles(withNewsKeyword, threeDaysAgoText, todayText, false);
+        if (hasArticles(recentWithKeyword)) {
+            return new FetchResult(recentWithKeyword, "last 3 days");
+        }
+
+        String sevenDaysAgoText = sevenDaysAgo.format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String weeklyArticles = newsApiService.fetchArticles(topic, sevenDaysAgoText, todayText, false);
+        if (hasArticles(weeklyArticles)) {
+            return new FetchResult(weeklyArticles, "last 7 days");
+        }
+
+        String weeklyWithKeyword = newsApiService.fetchArticles(withNewsKeyword, sevenDaysAgoText, todayText, false);
+        if (hasArticles(weeklyWithKeyword)) {
+            return new FetchResult(weeklyWithKeyword, "last 7 days");
+        }
+
+        return new FetchResult(NO_ARTICLES_MESSAGE, "recent days");
     }
 
     /**
@@ -287,74 +352,6 @@ public class MorningBriefing {
         }
 
         return builder.toString();
-    }
-
-    /**
-     * Builds local keyword candidates from frequency counts in summary text.
-     *
-     * @param text Summary text source.
-     * @return Five comma-separated keywords.
-     */
-    private String buildLocalKeywords(String text) {
-        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH)
-                .replaceAll("[^a-z0-9\\s]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-
-        if (normalized.isEmpty()) {
-            return "news, world, update, events, briefing";
-        }
-
-        Set<String> stopWords = new HashSet<>();
-        stopWords.add("the");
-        stopWords.add("and");
-        stopWords.add("for");
-        stopWords.add("with");
-        stopWords.add("from");
-        stopWords.add("that");
-        stopWords.add("this");
-        stopWords.add("into");
-        stopWords.add("about");
-        stopWords.add("have");
-        stopWords.add("has");
-        stopWords.add("are");
-        stopWords.add("was");
-        stopWords.add("were");
-
-        Map<String, Integer> counts = new HashMap<>();
-        for (String word : normalized.split(" ")) {
-            if (word.length() < 3 || stopWords.contains(word)) {
-                continue;
-            }
-            counts.put(word, counts.getOrDefault(word, 0) + 1);
-        }
-
-        if (counts.isEmpty()) {
-            return "news, world, update, events, briefing";
-        }
-
-        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
-        entries.sort((left, right) -> {
-            int compareCount = Integer.compare(right.getValue(), left.getValue());
-            if (compareCount != 0) {
-                return compareCount;
-            }
-            return left.getKey().compareTo(right.getKey());
-        });
-
-        List<String> topKeywords = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : entries) {
-            topKeywords.add(entry.getKey());
-            if (topKeywords.size() == 5) {
-                break;
-            }
-        }
-
-        while (topKeywords.size() < 5) {
-            topKeywords.add("news");
-        }
-
-        return String.join(", ", topKeywords);
     }
 
     /**
@@ -401,6 +398,16 @@ public class MorningBriefing {
             return true;
         }
         return NO_ARTICLES_MESSAGE.equalsIgnoreCase(value.trim());
+    }
+
+    /**
+     * Checks whether the fetched text contains usable article content.
+     *
+     * @param value NewsAPI combined text.
+     * @return True when content is usable.
+     */
+    private boolean hasArticles(String value) {
+        return value != null && !value.isBlank() && !isNoArticles(value);
     }
 
     /**

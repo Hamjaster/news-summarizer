@@ -12,11 +12,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -42,6 +40,7 @@ public class MenuUI {
     private static final Pattern LAST_X_DAYS_PATTERN = Pattern.compile("(?i)\\blast\\s+(\\d{1,2})\\s+days\\b");
     private static final String GEMINI_FALLBACK_RESPONSE = "Could not complete request. Please try again.";
     private static final String NO_ARTICLES_MESSAGE = "No articles found for this query and date range.";
+    private static final int MAX_INVALID_YES_NO_ATTEMPTS = 3;
 
     private final Scanner scanner;
     private final GeminiService geminiService;
@@ -112,17 +111,10 @@ public class MenuUI {
      * @return Nothing. It prints directly to terminal.
      */
     private void showStartupSplash() {
-        System.out.println();
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("WELCOME", CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("NEWS & SUMMARY ASSISTANT", CYAN + BOLD, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
-        TerminalUtils.printCenteredLine("Powered by Gemini AI  |  NewsAPI  |  Java", CYAN, RESET);
-        TerminalUtils.printCenteredLine("", WHITE, RESET);
         TerminalUtils.printCenteredLine("═".repeat(TerminalUtils.BOX_WIDTH), CYAN + BOLD, RESET);
-        System.out.println();
         TerminalUtils.pause(1500);
     }
 
@@ -161,7 +153,7 @@ public class MenuUI {
 
         while (continueSearching) {
             try {
-                String userQuestion = readLine("What do you want to know about?");
+                String userQuestion = readLine("What do you want to know about");
                 if (userQuestion.isEmpty()) {
                     printErrorBox(
                             "ERROR: The question cannot be empty.",
@@ -228,7 +220,7 @@ public class MenuUI {
                 );
             }
 
-            continueSearching = askYesOrNo("Search again? (yes/no)");
+            continueSearching = askYesOrNo("Search again (yes/no)");
         }
     }
 
@@ -270,7 +262,7 @@ public class MenuUI {
                 );
             }
 
-            continueSummarizing = askYesOrNo("Summarize another? (yes/no)");
+            continueSummarizing = askYesOrNo("Summarize another (yes/no)");
         }
     }
 
@@ -634,8 +626,14 @@ public class MenuUI {
      * @return True for yes, false for no.
      */
     private boolean askYesOrNo(String question) {
+        int invalidAttempts = 0;
+
         while (true) {
             String answer = readLine(question).toLowerCase(Locale.ENGLISH);
+            if (answer.isBlank()) {
+                return false;
+            }
+
             if ("yes".equals(answer) || "y".equals(answer)) {
                 return true;
             }
@@ -643,9 +641,19 @@ public class MenuUI {
                 return false;
             }
 
+            invalidAttempts++;
+            if (invalidAttempts >= MAX_INVALID_YES_NO_ATTEMPTS) {
+                printErrorBox(
+                        "ERROR: Too many invalid yes/no answers.",
+                        "Returning to the previous menu."
+                );
+                return false;
+            }
+
             printErrorBox(
                     "ERROR: Please answer with yes or no.",
-                    "Valid answers: yes, y, no, n."
+                    "Valid answers: yes, y, no, n.",
+                    "Press Enter without typing to choose no."
             );
         }
     }
@@ -712,25 +720,7 @@ public class MenuUI {
         );
 
         TerminalUtils.printWordStats(originalText, summaryText, YELLOW, RESET);
-
-        String topKeywords = resolveTopKeywords(summaryText);
-        TerminalUtils.printTopKeywords(topKeywords, YELLOW, BOLD, RESET);
-
         TerminalUtils.printGreenDivider(GREEN, RESET);
-    }
-
-    /**
-     * Resolves top five keywords from summary using Gemini, with local fallback.
-     *
-     * @param summaryText Summary text source.
-     * @return Comma-separated keywords.
-     */
-    private String resolveTopKeywords(String summaryText) {
-        String keywords = geminiService.extractTopKeywords(summaryText);
-        if (isGeminiFallbackResponse(keywords) || keywords.isBlank()) {
-            return buildLocalKeywords(summaryText);
-        }
-        return keywords;
     }
 
     /**
@@ -805,9 +795,7 @@ public class MenuUI {
      * @return Nothing. It prints directly to terminal.
      */
     private void printSuccessMessage(String message) {
-        System.out.println();
         TerminalUtils.printCenteredLine(message, GREEN + BOLD, RESET);
-        System.out.println();
     }
 
     /**
@@ -954,74 +942,6 @@ public class MenuUI {
             return summaryBuilder.substring(0, targetLength + 40).trim() + "...";
         }
         return summaryBuilder.toString();
-    }
-
-    /**
-     * Builds local keyword list when Gemini keyword extraction is unavailable.
-     *
-     * @param text Source text for keyword extraction.
-     * @return Five comma-separated fallback keywords.
-     */
-    private String buildLocalKeywords(String text) {
-        String normalized = text == null ? "" : text.toLowerCase(Locale.ENGLISH)
-                .replaceAll("[^a-z0-9\\s]", " ")
-                .replaceAll("\\s+", " ")
-                .trim();
-
-        if (normalized.isEmpty()) {
-            return "news, summary, update, topic, highlights";
-        }
-
-        Set<String> stopWords = new HashSet<>();
-        stopWords.add("the");
-        stopWords.add("and");
-        stopWords.add("for");
-        stopWords.add("with");
-        stopWords.add("from");
-        stopWords.add("that");
-        stopWords.add("this");
-        stopWords.add("into");
-        stopWords.add("about");
-        stopWords.add("have");
-        stopWords.add("has");
-        stopWords.add("are");
-        stopWords.add("was");
-        stopWords.add("were");
-
-        Map<String, Integer> counts = new HashMap<>();
-        for (String word : normalized.split(" ")) {
-            if (word.length() < 3 || stopWords.contains(word)) {
-                continue;
-            }
-            counts.put(word, counts.getOrDefault(word, 0) + 1);
-        }
-
-        if (counts.isEmpty()) {
-            return "news, summary, update, topic, highlights";
-        }
-
-        List<Map.Entry<String, Integer>> entries = new ArrayList<>(counts.entrySet());
-        entries.sort((left, right) -> {
-            int compareCount = Integer.compare(right.getValue(), left.getValue());
-            if (compareCount != 0) {
-                return compareCount;
-            }
-            return left.getKey().compareTo(right.getKey());
-        });
-
-        List<String> keywords = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : entries) {
-            keywords.add(entry.getKey());
-            if (keywords.size() == 5) {
-                break;
-            }
-        }
-
-        while (keywords.size() < 5) {
-            keywords.add("news");
-        }
-
-        return String.join(", ", keywords);
     }
 
     /**

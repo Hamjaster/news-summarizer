@@ -67,6 +67,19 @@ public class NewsApiService {
      * @return Combined article text, a no-results message, or an empty string on error.
      */
     public String fetchArticles(String keywords, String fromDate, String toDate) {
+        return fetchArticles(keywords, fromDate, toDate, true);
+    }
+
+    /**
+     * Fetches articles with optional loading output for multi-step fallback flows.
+     *
+     * @param keywords Search keywords created by Gemini.
+     * @param fromDate Start date in yyyy-MM-dd format.
+     * @param toDate End date in yyyy-MM-dd format.
+     * @param showLoading True to print loading, false for silent internal retries.
+     * @return Combined article text, a no-results message, or an empty string on error.
+     */
+    public String fetchArticles(String keywords, String fromDate, String toDate, boolean showLoading) {
         if (keywords == null || keywords.trim().isEmpty()) {
             printErrorBox(
                     "ERROR: No keywords were provided to NewsAPI.",
@@ -91,7 +104,9 @@ public class NewsApiService {
                     .GET()
                     .build();
 
+            if (showLoading) {
                 TerminalUtils.showLoading("Please wait");
+            }
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 

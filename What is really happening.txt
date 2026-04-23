@@ -1,0 +1,64 @@
+This app is a terminal assistant that helps you in two ways: it can search recent news and give you one clear summary, and it can also summarize any text you paste. It asks for your choice in a menu, sends requests to online services, and prints the result in a clean box so it is easy to read.
+Here there is clear info about the project info
+Option 1 (Search & Summarize News) works like this:
+1) You choose option 1 from the menu.
+2) The app asks what you want to know.
+3) The app asks for a date or date range, or uses the last 3 weeks if you press Enter.
+4) The app checks that your date is valid and within NewsAPI's last 30 days limit.
+5) Gemini turns your normal question into cleaner search keywords.
+6) NewsAPI is called with those keywords and dates.
+7) The app combines article titles and descriptions.
+8) Gemini reads that combined text and writes one clear summary.
+9) The summary is shown in a bordered box.
+10) You can choose to search again.
+
+
+
+
+Option 2 (Summarize My Own Text) works like this:
+1) You choose option 2 from the menu.
+2) You paste your text in multiple lines.
+3) You type END on a new line when finished.
+4) The app sends your text to Gemini with a clear summarization instruction.
+5) Gemini returns a shorter, readable summary.
+6) The summary is shown in the same bordered box.
+7) You can choose to summarize another text.
+
+Option 3 (Analyze Content) works like this:
+1) You choose option 3 from the main menu.
+2) The app asks what type of content you have: Song Lyrics, Book Excerpt, or Newspaper Article.
+3) You paste your content in multiple lines and type END on a new line when finished.
+4) The app creates the correct analyzer type and shows a type-specific analysis menu.
+5) Based on your chosen action, the app sends a tailored prompt to Gemini using the existing GeminiService.
+6) The result is shown in the same bordered summary box format.
+7) You can choose to analyze more content or return to the main menu.
+
+How polymorphism is used in Option 3:
+- The app stores each analyzer as the base type ContentAnalyzer.
+- At runtime it creates LyricsAnalyzer, BookAnalyzer, or NewspaperAnalyzer depending on user choice.
+- Each subclass overrides analyze(...) and printAnalysisMenu() to provide behavior specific to that content type.
+- This keeps one shared flow in ContentAnalyzerUI while allowing different analysis logic for different content.
+
+Gemini is Google's AI model. In option 1 we use Gemini twice because these are two different jobs: first to convert your question into better search keywords, and second to read many article snippets and create one clean final summary.
+
+NewsAPI is a service that provides recent news articles. Its free endpoint only supports recent history (about the last 30 days), so older requested dates cannot be used and the app asks you to choose a newer date.
+
+What each Java file does:
+- Main.java starts the program and opens the menu.
+- MenuUI.java handles menu display, user input, date parsing, and flow control.
+- GeminiService.java sends prompts to Gemini and reads AI responses.
+- NewsApiService.java calls NewsAPI and combines article titles and descriptions.
+- ContentAnalyzer.java defines the abstract analyzer blueprint and concrete analyzers for lyrics, books, and newspaper content.
+- ContentAnalyzerUI.java handles the content-analyzer user flow and routes user choices to the right analyzer.
+
+Environment variables and .env loading:
+- The app requires GEMINI_API_KEY and NEWS_API_KEY.
+- The run-app.ps1 script now auto-loads .env values into the process environment before compile/run.
+- It checks for .env in project root first, then falls back to src/main/java/com/example/newssummarizer/.env.
+- This makes Ctrl+Alt+N and script-based runs work without manually exporting keys each time.
+
+How to run the app:
+1) Open a terminal in the project folder.
+2) Build the project with: mvn -DskipTests package
+3) Run it with: mvn exec:java
+4) Use the menu and follow the prompts.

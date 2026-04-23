@@ -12,10 +12,10 @@ import java.util.Scanner;
 
 public final class TerminalUtils {
 
-    public static final int BOX_WIDTH = 80;
-    public static final int INNER_WIDTH = 76;
-    public static final int SUMMARY_WRAP_WIDTH = 72;
-    public static final String INDENT = "    ";
+    public static final int BOX_WIDTH = 72;
+    public static final int INNER_WIDTH = 68;
+    public static final int SUMMARY_WRAP_WIDTH = 64;
+    public static final String INDENT = "";
 
     private TerminalUtils() {
         // Utility class.
@@ -44,18 +44,8 @@ public final class TerminalUtils {
     public static void showLoading(String message) {
         String yellow = "\u001B[33m";
         String reset = "\u001B[0m";
-        String baseMessage = (message == null || message.isBlank()) ? "Please wait" : message.trim();
-
-        System.out.println();
-        for (int cycle = 0; cycle < 2; cycle++) {
-            for (int dots = 1; dots <= 3; dots++) {
-                String frame = baseMessage + " " + ".".repeat(dots);
-                String centeredFrame = centerText(frame, BOX_WIDTH);
-                System.out.println(INDENT + yellow + centeredFrame + reset);
-                pause(400);
-            }
-        }
-        System.out.println();
+        String baseMessage = (message == null || message.isBlank()) ? "Loading" : message.trim();
+        System.out.println(INDENT + yellow + baseMessage + reset);
     }
 
     /**
@@ -97,7 +87,6 @@ public final class TerminalUtils {
         String safeContentStyle = contentStyle == null ? "" : contentStyle;
         String safeReset = reset == null ? "" : reset;
 
-        System.out.println();
         printRawLine(safeBorderStyle + "╔" + "═".repeat(BOX_WIDTH - 2) + "╗" + safeReset);
         printRawLine(safeBorderStyle + "║ " + safeTitleStyle + centerText(title == null ? "" : title, INNER_WIDTH)
                 + safeBorderStyle + " ║" + safeReset);
@@ -120,7 +109,6 @@ public final class TerminalUtils {
         }
 
         printRawLine(safeBorderStyle + "╚" + "═".repeat(BOX_WIDTH - 2) + "╝" + safeReset);
-        System.out.println();
     }
 
     /**
@@ -137,7 +125,6 @@ public final class TerminalUtils {
         String safeContentStyle = contentStyle == null ? "" : contentStyle;
         String safeReset = reset == null ? "" : reset;
 
-        System.out.println();
         printRawLine(safeBorderStyle + "╔" + "═".repeat(BOX_WIDTH - 2) + "╗" + safeReset);
 
         List<String> expandedLines = new ArrayList<>();
@@ -157,7 +144,6 @@ public final class TerminalUtils {
         }
 
         printRawLine(safeBorderStyle + "╚" + "═".repeat(BOX_WIDTH - 2) + "╝" + safeReset);
-        System.out.println();
     }
 
     /**
@@ -204,19 +190,8 @@ public final class TerminalUtils {
      */
     public static String prompt(Scanner scanner, String promptText, String cyan, String white, String reset) {
         String safePrompt = promptText == null ? "" : promptText;
-        String plainPrompt = "→ " + safePrompt;
-        String centeredPrompt = centerText(plainPrompt, BOX_WIDTH);
 
-        System.out.println();
-        int arrowIndex = centeredPrompt.indexOf("→");
-        if (arrowIndex >= 0) {
-            String beforeArrow = centeredPrompt.substring(0, arrowIndex);
-            String afterArrow = centeredPrompt.substring(arrowIndex + 1);
-            System.out.println(INDENT + beforeArrow + cyan + "→" + reset + white + afterArrow + reset);
-        } else {
-            System.out.println(INDENT + white + centeredPrompt + reset);
-        }
-        System.out.println();
+        System.out.println(INDENT + cyan + "->" + reset + " " + white + safePrompt + reset);
 
         String input = scanner.nextLine();
         return input == null ? "" : input.trim();
@@ -242,49 +217,9 @@ public final class TerminalUtils {
             compression = 0;
         }
 
-        String line = "Original: " + originalCount + " words   →   Summary: " + summaryCount
-                + " words   →   Compressed: " + compression + "%";
-
-        System.out.println();
+        String line = "Original: " + originalCount + " words   ->   Summary: " + summaryCount
+            + " words   ->   Compressed: " + compression + "%";
         printCenteredLine(line, yellow, reset);
-        System.out.println();
-    }
-
-    /**
-     * Prints highlighted top keywords in yellow and bold style.
-     *
-     * @param commaSeparatedKeywords Keywords separated by commas.
-     * @param yellow ANSI yellow code.
-     * @param bold ANSI bold code.
-     * @param reset ANSI reset code.
-     * @return Nothing. It prints directly to terminal.
-     */
-    public static void printTopKeywords(String commaSeparatedKeywords, String yellow, String bold, String reset) {
-        String safeKeywords = commaSeparatedKeywords == null ? "" : commaSeparatedKeywords.trim();
-        String displayKeywords = safeKeywords;
-
-        if (displayKeywords.isEmpty()) {
-            displayKeywords = "n/a";
-        } else {
-            String[] pieces = displayKeywords.split(",");
-            List<String> trimmedPieces = new ArrayList<>();
-            for (String piece : pieces) {
-                String trimmed = piece.trim();
-                if (!trimmed.isEmpty()) {
-                    trimmedPieces.add(trimmed);
-                }
-            }
-            if (trimmedPieces.isEmpty()) {
-                displayKeywords = "n/a";
-            } else {
-                displayKeywords = String.join("  |  ", trimmedPieces);
-            }
-        }
-
-        String line = "Top Keywords:  " + displayKeywords;
-        System.out.println();
-        printCenteredLine(line, yellow + bold, reset);
-        System.out.println();
     }
 
     /**
@@ -295,9 +230,7 @@ public final class TerminalUtils {
      * @return Nothing. It prints directly to terminal.
      */
     public static void printGreenDivider(String green, String reset) {
-        System.out.println();
         System.out.println(INDENT + green + "─".repeat(BOX_WIDTH) + reset);
-        System.out.println();
     }
 
     /**

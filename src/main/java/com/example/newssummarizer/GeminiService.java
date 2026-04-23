@@ -207,21 +207,6 @@ public class GeminiService {
     }
 
     /**
-     * Extracts exactly five keywords from summary text.
-     *
-     * @param text Source text used for keyword extraction.
-     * @return Comma-separated keyword response.
-     */
-    public String extractTopKeywords(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return cleanResponse(FALLBACK_RESPONSE);
-        }
-
-        String prompt = "Extract exactly 5 single keywords from this text. Return them comma separated, nothing else: " + text;
-        return cleanResponse(sendPrompt(prompt));
-    }
-
-    /**
      * Sends prompt payload to Gemini and extracts candidates[0].content.parts[0].text.
      *
      * @param prompt Prompt text to send.
@@ -387,6 +372,13 @@ public class GeminiService {
                     "Please update the key and try again.",
                     apiMessage.isEmpty() ? "" : "Details: " + apiMessage
             );
+            return;
+        }
+
+        if (statusCode >= 500 && statusCode <= 504) {
+            setLastFailureReason(apiMessage.isEmpty()
+                    ? "Gemini is temporarily overloaded (HTTP " + statusCode + ")."
+                    : "Gemini is temporarily overloaded (HTTP " + statusCode + "): " + apiMessage);
             return;
         }
 
