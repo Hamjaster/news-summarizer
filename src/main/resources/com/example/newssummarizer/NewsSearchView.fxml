@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.Separator?>
+
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.example.newssummarizer.NewsSearchController"
+      styleClass="feature-view" spacing="12">
+
+    <Label text="Search News" styleClass="view-title"/>
+    <Separator/>
+
+    <HBox spacing="8">
+        <TextField fx:id="queryField" promptText="What do you want to know about? (e.g. AI breakthroughs last week)"
+                   styleClass="input-field" HBox.hgrow="ALWAYS" onAction="#onSearch"/>
+        <Button text="Search" styleClass="action-btn" onAction="#onSearch"/>
+    </HBox>
+
+    <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
+        <ProgressIndicator fx:id="progressIndicator" maxWidth="60" maxHeight="60" visible="false"/>
+        <TextArea fx:id="resultArea" styleClass="result-area" wrapText="true" editable="false"
+                  promptText="Your summary will appear here..."/>
+    </StackPane>
+
+    <Label fx:id="wordStatsLabel" styleClass="stats-label" text=""/>
+
+</VBox>

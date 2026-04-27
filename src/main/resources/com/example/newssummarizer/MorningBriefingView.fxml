@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.Separator?>
+
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.example.newssummarizer.MorningBriefingController"
+      styleClass="feature-view" spacing="12">
+
+    <Label text="Morning Briefing" styleClass="view-title"/>
+    <Separator/>
+
+    <Button text="Get Today's Briefing" styleClass="action-btn" onAction="#onGetBriefing" maxWidth="Infinity"/>
+
+    <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
+        <ProgressIndicator fx:id="briefingProgress" maxWidth="60" maxHeight="60" visible="false"/>
+        <TextArea fx:id="briefingArea" styleClass="result-area" wrapText="true" editable="false"
+                  promptText="Click the button above to fetch today's top world news..."/>
+    </StackPane>
+
+    <Separator/>
+
+    <HBox spacing="8">
+        <Label text="Deep Dive:" styleClass="field-label"/>
+        <TextField fx:id="deepDiveField" promptText="Enter a topic to explore further..."
+                   styleClass="input-field" HBox.hgrow="ALWAYS" onAction="#onDeepDive"/>
+        <Button text="Search" styleClass="action-btn" onAction="#onDeepDive"/>
+    </HBox>
+
+    <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
+        <ProgressIndicator fx:id="deepDiveProgress" maxWidth="60" maxHeight="60" visible="false"/>
+        <TextArea fx:id="deepDiveArea" styleClass="result-area" wrapText="true" editable="false"
+                  promptText="Deep dive results will appear here..."/>
+    </StackPane>
+
+</VBox>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.Separator?>
+
+<VBox xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.example.newssummarizer.TextSummaryController"
+      styleClass="feature-view" spacing="12">
+
+    <Label text="Summarize Text" styleClass="view-title"/>
+    <Separator/>
+
+    <Label text="Paste your text below:" styleClass="field-label"/>
+    <TextArea fx:id="inputArea" styleClass="input-area" wrapText="true"
+              promptText="Paste any text here and click Summarize..." VBox.vgrow="ALWAYS"/>
+
+    <Button text="Summarize" styleClass="action-btn" onAction="#onSummarize" maxWidth="Infinity"/>
+
+    <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
+        <ProgressIndicator fx:id="progressIndicator" maxWidth="60" maxHeight="60" visible="false"/>
+        <TextArea fx:id="resultArea" styleClass="result-area" wrapText="true" editable="false"
+                  promptText="Summary will appear here..."/>
+    </StackPane>
+
+    <Label fx:id="wordStatsLabel" styleClass="stats-label" text=""/>
+
+</VBox>
