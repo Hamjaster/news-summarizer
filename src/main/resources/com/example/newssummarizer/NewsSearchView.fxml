@@ -2,30 +2,43 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.ProgressIndicator?>
-<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.ComboBox?>
 
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.example.newssummarizer.NewsSearchController"
-      styleClass="feature-view" spacing="12">
+      styleClass="feature-view">
 
-    <Label text="Search News" styleClass="view-title"/>
-    <Separator/>
+    <!-- Hero header -->
+    <VBox styleClass="hero">
+        <Label text="THE WIRE" styleClass="hero-eyebrow"/>
+        <Label text="Search the News" styleClass="view-title"/>
+        <Label text="Ask in plain English. We'll find the headlines and write you a briefing." styleClass="view-subtitle" wrapText="true"/>
+        <Region styleClass="hero-rule"/>
+    </VBox>
 
-    <HBox spacing="8">
-        <TextField fx:id="queryField" promptText="What do you want to know about? (e.g. AI breakthroughs last week)"
+    <!-- Search bar -->
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <TextField fx:id="queryField" promptText="Try: 'AI breakthroughs last week' or 'Federal Reserve rate decision'"
                    styleClass="input-field" HBox.hgrow="ALWAYS" onAction="#onSearch"/>
         <Button text="Search" styleClass="action-btn" onAction="#onSearch"/>
     </HBox>
 
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="BRIEFING LENGTH" styleClass="field-label"/>
+        <ComboBox fx:id="lengthCombo" styleClass="action-combo"/>
+    </HBox>
+
+    <!-- Result -->
     <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
-        <ProgressIndicator fx:id="progressIndicator" maxWidth="60" maxHeight="60" visible="false"/>
+        <ProgressIndicator fx:id="progressIndicator" maxWidth="64" maxHeight="64" visible="false"/>
         <TextArea fx:id="resultArea" styleClass="result-area" wrapText="true" editable="false"
-                  promptText="Your summary will appear here..."/>
+                  promptText="Your briefing will appear here..."/>
     </StackPane>
 
     <Label fx:id="wordStatsLabel" styleClass="stats-label" text=""/>

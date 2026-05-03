@@ -23,6 +23,7 @@ public class Main {//The purpose here basically is to start the program itself
      */
     public static void main(String[] args) {
         try {
+            DotEnvLoader.load();
             MenuUI menuUI = new MenuUI();
             menuUI.start();
         } catch (Exception exception) {

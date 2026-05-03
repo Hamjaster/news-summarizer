@@ -49,7 +49,7 @@ public class MorningBriefingController {
         task.setOnSucceeded(e -> {
             briefingProgress.setVisible(false);
             briefingArea.setVisible(true);
-            briefingArea.setText(task.getValue());
+            briefingArea.setText(surfaceFailureReason(task.getValue()));
         });
 
         task.setOnFailed(e -> {
@@ -82,7 +82,7 @@ public class MorningBriefingController {
         task.setOnSucceeded(e -> {
             deepDiveProgress.setVisible(false);
             deepDiveArea.setVisible(true);
-            deepDiveArea.setText(task.getValue());
+            deepDiveArea.setText(surfaceFailureReason(task.getValue()));
         });
 
         task.setOnFailed(e -> {
@@ -135,5 +135,13 @@ public class MorningBriefingController {
 
     private boolean hasArticles(String value) {
         return value != null && !value.isBlank() && !NO_ARTICLES.equalsIgnoreCase(value.trim());
+    }
+
+    private String surfaceFailureReason(String result) {
+        if (result == null || result.isBlank() || result.startsWith("Could not complete request")) {
+            String reason = geminiService.getLastFailureReason();
+            if (reason != null && !reason.isBlank()) return reason;
+        }
+        return result;
     }
 }

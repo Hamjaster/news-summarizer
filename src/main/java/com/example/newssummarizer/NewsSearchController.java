@@ -2,6 +2,7 @@ package com.example.newssummarizer;
 
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextArea;
@@ -16,6 +17,7 @@ public class NewsSearchController {
     @FXML private TextArea resultArea;
     @FXML private ProgressIndicator progressIndicator;
     @FXML private Label wordStatsLabel;
+    @FXML private ComboBox<String> lengthCombo;
 
     private GeminiService geminiService;
     private NewsApiService newsApiService;
@@ -26,9 +28,16 @@ public class NewsSearchController {
     }
 
     @FXML
+    public void initialize() {
+        lengthCombo.getItems().setAll("Short", "Medium", "Long");
+        lengthCombo.getSelectionModel().select("Medium");
+    }
+
+    @FXML
     private void onSearch() {
         String query = queryField.getText().trim();
         if (query.isEmpty()) return;
+        String length = lengthCombo.getValue();
 
         setLoading(true);
 
@@ -40,13 +49,13 @@ public class NewsSearchController {
                 String fromDate = LocalDate.now().minusDays(21).format(DateTimeFormatter.ISO_LOCAL_DATE);
                 String articles = newsApiService.fetchArticles(keywords, fromDate, toDate, false);
                 if (articles.isBlank() || articles.startsWith("No articles found")) return articles;
-                return geminiService.summarizeArticles(articles);
+                return geminiService.summarizeArticlesWithLength(articles, length);
             }
         };
 
         task.setOnSucceeded(e -> {
             setLoading(false);
-            String result = task.getValue();
+            String result = surfaceFailureReason(task.getValue());
             resultArea.setText(result);
             updateWordStats(query, result);
         });
@@ -75,5 +84,13 @@ public class NewsSearchController {
     private int countWords(String text) {
         if (text == null || text.isBlank()) return 0;
         return text.trim().split("\\s+").length;
+    }
+
+    private String surfaceFailureReason(String result) {
+        if (result == null || result.isBlank() || result.startsWith("Could not complete request")) {
+            String reason = geminiService.getLastFailureReason();
+            if (reason != null && !reason.isBlank()) return reason;
+        }
+        return result;
     }
 }

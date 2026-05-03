@@ -2,45 +2,51 @@
 <?import javafx.scene.layout.VBox?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.ProgressIndicator?>
-<?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.RadioButton?>
 <?import javafx.scene.control.ToggleGroup?>
 <?import javafx.scene.control.ComboBox?>
 
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.example.newssummarizer.ContentAnalyzerController"
-      styleClass="feature-view" spacing="12">
+      styleClass="feature-view">
 
     <fx:define>
         <ToggleGroup fx:id="typeGroup"/>
     </fx:define>
 
-    <Label text="Analyze Content" styleClass="view-title"/>
-    <Separator/>
+    <!-- Hero header -->
+    <VBox styleClass="hero">
+        <Label text="THE CRITIQUE" styleClass="hero-eyebrow"/>
+        <Label text="Analyze Content" styleClass="view-title"/>
+        <Label text="Drop in lyrics, a chapter, or an article. Pick a lens. Read the analysis." styleClass="view-subtitle" wrapText="true"/>
+        <Region styleClass="hero-rule"/>
+    </VBox>
 
-    <HBox spacing="16" alignment="CENTER_LEFT">
-        <Label text="Type:" styleClass="field-label"/>
+    <Label text="CONTENT TYPE" styleClass="field-label"/>
+    <HBox spacing="20" alignment="CENTER_LEFT">
         <RadioButton fx:id="lyricsRadio"    text="Song Lyrics"       toggleGroup="$typeGroup" selected="true"/>
         <RadioButton fx:id="bookRadio"      text="Book Excerpt"      toggleGroup="$typeGroup"/>
         <RadioButton fx:id="newspaperRadio" text="Newspaper Article" toggleGroup="$typeGroup"/>
     </HBox>
 
-    <Label text="Paste your content below:" styleClass="field-label"/>
+    <Label text="YOUR CONTENT" styleClass="field-label"/>
     <TextArea fx:id="inputArea" styleClass="input-area" wrapText="true"
               promptText="Paste lyrics, excerpt, or article here..." VBox.vgrow="ALWAYS"/>
 
-    <HBox spacing="8" alignment="CENTER_LEFT">
-        <Label text="Action:" styleClass="field-label"/>
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="ACTION" styleClass="field-label"/>
         <ComboBox fx:id="actionCombo" styleClass="action-combo" HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
         <Button text="Analyze" styleClass="action-btn" onAction="#onAnalyze"/>
     </HBox>
 
+    <Label text="ANALYSIS" styleClass="field-label"/>
     <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
-        <ProgressIndicator fx:id="progressIndicator" maxWidth="60" maxHeight="60" visible="false"/>
+        <ProgressIndicator fx:id="progressIndicator" maxWidth="64" maxHeight="64" visible="false"/>
         <TextArea fx:id="resultArea" styleClass="result-area" wrapText="true" editable="false"
                   promptText="Analysis will appear here..."/>
     </StackPane>

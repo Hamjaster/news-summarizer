@@ -12,13 +12,14 @@
 
     <!-- Sidebar -->
     <left>
-        <VBox styleClass="sidebar" prefWidth="210">
-            <Label text="NEWS SUMMARIZER" styleClass="app-title"/>
+        <VBox styleClass="sidebar" prefWidth="240">
+            <Label text="The Daily Brief" styleClass="app-title"/>
+            <Label text="AI NEWSROOM · EST. 2025" styleClass="app-subtitle"/>
             <Separator styleClass="divider"/>
-            <Button text="Search News"      styleClass="nav-btn" onAction="#showSearchNews"      maxWidth="Infinity"/>
-            <Button text="Summarize Text"   styleClass="nav-btn" onAction="#showSummarizeText"   maxWidth="Infinity"/>
-            <Button text="Analyze Content"  styleClass="nav-btn" onAction="#showAnalyzeContent"  maxWidth="Infinity"/>
-            <Button text="Morning Briefing" styleClass="nav-btn" onAction="#showMorningBriefing" maxWidth="Infinity"/>
+            <Button fx:id="navSearch"   text="◷  Search News"      styleClass="nav-btn" onAction="#showSearchNews"      maxWidth="Infinity"/>
+            <Button fx:id="navSummary"  text="❡  Summarize Text"   styleClass="nav-btn" onAction="#showSummarizeText"   maxWidth="Infinity"/>
+            <Button fx:id="navAnalyze"  text="✎  Analyze Content"  styleClass="nav-btn" onAction="#showAnalyzeContent"  maxWidth="Infinity"/>
+            <Button fx:id="navBriefing" text="☀  Morning Briefing" styleClass="nav-btn" onAction="#showMorningBriefing" maxWidth="Infinity"/>
             <Region VBox.vgrow="ALWAYS"/>
             <Button text="Exit" styleClass="exit-btn" onAction="#exitApp" maxWidth="Infinity"/>
         </VBox>

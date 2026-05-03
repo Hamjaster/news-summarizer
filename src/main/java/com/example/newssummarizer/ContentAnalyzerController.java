@@ -81,7 +81,7 @@ public class ContentAnalyzerController {
 
         task.setOnSucceeded(e -> {
             setLoading(false);
-            String result = task.getValue();
+            String result = surfaceFailureReason(task.getValue());
             resultArea.setText(result);
             updateWordStats(content, result);
         });
@@ -110,5 +110,13 @@ public class ContentAnalyzerController {
     private int countWords(String text) {
         if (text == null || text.isBlank()) return 0;
         return text.trim().split("\\s+").length;
+    }
+
+    private String surfaceFailureReason(String result) {
+        if (result == null || result.isBlank() || result.startsWith("Could not complete request")) {
+            String reason = geminiService.getLastFailureReason();
+            if (reason != null && !reason.isBlank()) return reason;
+        }
+        return result;
     }
 }

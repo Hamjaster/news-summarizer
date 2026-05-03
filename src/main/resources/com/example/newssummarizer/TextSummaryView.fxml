@@ -1,27 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.TextArea?>
 <?import javafx.scene.control.ProgressIndicator?>
-<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.ComboBox?>
 
 <VBox xmlns:fx="http://javafx.com/fxml/1"
       fx:controller="com.example.newssummarizer.TextSummaryController"
-      styleClass="feature-view" spacing="12">
+      styleClass="feature-view">
 
-    <Label text="Summarize Text" styleClass="view-title"/>
-    <Separator/>
+    <!-- Hero header -->
+    <VBox styleClass="hero">
+        <Label text="EDITOR'S DESK" styleClass="hero-eyebrow"/>
+        <Label text="Summarize Text" styleClass="view-title"/>
+        <Label text="Paste any article, essay, or transcript. Get a clean, paragraph-form summary." styleClass="view-subtitle" wrapText="true"/>
+        <Region styleClass="hero-rule"/>
+    </VBox>
 
-    <Label text="Paste your text below:" styleClass="field-label"/>
+    <Label text="YOUR TEXT" styleClass="field-label"/>
     <TextArea fx:id="inputArea" styleClass="input-area" wrapText="true"
               promptText="Paste any text here and click Summarize..." VBox.vgrow="ALWAYS"/>
 
-    <Button text="Summarize" styleClass="action-btn" onAction="#onSummarize" maxWidth="Infinity"/>
+    <HBox spacing="10" alignment="CENTER_LEFT">
+        <Label text="LENGTH" styleClass="field-label"/>
+        <ComboBox fx:id="lengthCombo" styleClass="action-combo"/>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="Summarize" styleClass="action-btn" onAction="#onSummarize"/>
+    </HBox>
 
+    <Label text="SUMMARY" styleClass="field-label"/>
     <StackPane VBox.vgrow="ALWAYS" styleClass="result-pane">
-        <ProgressIndicator fx:id="progressIndicator" maxWidth="60" maxHeight="60" visible="false"/>
+        <ProgressIndicator fx:id="progressIndicator" maxWidth="64" maxHeight="64" visible="false"/>
         <TextArea fx:id="resultArea" styleClass="result-area" wrapText="true" editable="false"
                   promptText="Summary will appear here..."/>
     </StackPane>

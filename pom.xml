@@ -48,7 +48,7 @@
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.example.newssummarizer.Main</mainClass>
+                    <mainClass>com.example.newssummarizer.MainApp</mainClass>
                     <options>
                         <option>--add-opens=java.base/java.util=ALL-UNNAMED</option>
                     </options>

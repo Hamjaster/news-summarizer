@@ -82,7 +82,7 @@ public class MenuUI {
                     handleTextSummarizerFlow();
                 } else if ("3".equals(menuChoice)) {
                     handleContentAnalyzerFlow();
-                } else if ("5".equals(menuChoice)) {
+                } else if ("4".equals(menuChoice)) {
                     handleMorningBriefingFlow();
                 } else if ("0".equals(menuChoice)) {
                     keepRunning = false;
@@ -90,7 +90,7 @@ public class MenuUI {
                 } else {
                     printErrorBox(
                             "ERROR: Invalid menu option.",
-                            "Please choose 1, 2, 3, 5, or 0."
+                            "Please choose 1, 2, 3, 4, or 0."
                     );
                 }
             }
@@ -129,7 +129,7 @@ public class MenuUI {
         menuLines.add("[1]  Search & Summarize News");
         menuLines.add("[2]  Summarize My Own Text");
         menuLines.add("[3]  Analyze Content");
-        menuLines.add("[5]  Morning Briefing");
+        menuLines.add("[4]  Morning Briefing");
         menuLines.add("[0]  Exit");
 
         TerminalUtils.printTitledBox(

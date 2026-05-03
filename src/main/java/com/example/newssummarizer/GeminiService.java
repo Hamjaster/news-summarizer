@@ -131,9 +131,16 @@ public class GeminiService {
             return cleanResponse(FALLBACK_RESPONSE);
         }
 
-        String prompt = "You are a news summarizer. Below are multiple news article titles and descriptions. "
-                + "Read them all and write one clear, concise summary of the main events. "
-                + "Use simple language. Do not use bullet points. Write in paragraph form.\n\n"
+        String prompt = "You are a senior news editor writing a reader-friendly briefing. "
+                + "Below are multiple news article titles and descriptions on a related topic. "
+                + "Read them all and write a thorough, engaging briefing of FIVE to SEVEN well-developed paragraphs "
+                + "(at least 350 words total). Structure it as: "
+                + "(1) an opening paragraph that frames the story and why it matters now; "
+                + "(2) two or three paragraphs unpacking the key facts, players, numbers, and direct details from the articles; "
+                + "(3) a paragraph on context, background, or broader implications; "
+                + "(4) a closing paragraph on what to watch for next. "
+                + "Use clear, vivid language. Write in flowing paragraphs only — no bullet points, no headings, no markdown. "
+                + "Do not invent facts; rely only on what the articles say.\n\n"
                 + "Articles:\n"
                 + combinedArticles;
 
@@ -165,6 +172,77 @@ public class GeminiService {
     }
 
     /**
+     * Returns a length instruction phrase for the given preset.
+     */
+    private String lengthInstruction(String preset) {
+        if (preset == null) preset = "";
+        switch (preset.trim().toLowerCase()) {
+            case "short":
+                return "Keep it short: write ONE to TWO paragraphs, roughly 90 to 130 words total.";
+            case "long":
+                return "Make it thorough: write FIVE to SEVEN well-developed paragraphs, at least 450 words total.";
+            case "medium":
+            default:
+                return "Make it medium-length: write THREE to FOUR paragraphs, roughly 230 to 300 words total.";
+        }
+    }
+
+    /**
+     * Summarizes user text at a chosen length preset (Short/Medium/Long).
+     *
+     * @param userText Raw user text.
+     * @param lengthPreset Length preset name.
+     * @return Summarized text.
+     */
+    public String summarizeText(String userText, String lengthPreset) {
+        if (userText == null || userText.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: Your text input is empty.",
+                    "Paste your text and press Summarize."
+            );
+            return cleanResponse(FALLBACK_RESPONSE);
+        }
+
+        String prompt = "Summarize the following content clearly and accurately. "
+                + lengthInstruction(lengthPreset) + " "
+                + "Write in flowing, well-developed paragraphs. "
+                + "Preserve key names, numbers, quotes, and cause-and-effect. "
+                + "No bullet points, no headings, no markdown.\n\n"
+                + "Text:\n"
+                + userText;
+
+        return cleanResponse(sendPrompt(prompt));
+    }
+
+    /**
+     * Summarizes news articles into a briefing at a chosen length preset.
+     *
+     * @param combinedArticles Combined article text.
+     * @param lengthPreset Length preset name.
+     * @return Briefing text.
+     */
+    public String summarizeArticlesWithLength(String combinedArticles, String lengthPreset) {
+        if (combinedArticles == null || combinedArticles.trim().isEmpty()) {
+            printErrorBox(
+                    "ERROR: No article content is available to summarize.",
+                    "Please search again with another question."
+            );
+            return cleanResponse(FALLBACK_RESPONSE);
+        }
+
+        String prompt = "You are a senior news editor writing a reader-friendly briefing. "
+                + "Below are multiple news article titles and descriptions on a related topic. "
+                + lengthInstruction(lengthPreset) + " "
+                + "Cover the key facts, players, numbers, context, and what to watch next. "
+                + "Use clear, vivid language. Write in flowing paragraphs only — no bullet points, no headings, no markdown. "
+                + "Do not invent facts; rely only on what the articles say.\n\n"
+                + "Articles:\n"
+                + combinedArticles;
+
+        return cleanResponse(sendPrompt(prompt));
+    }
+
+    /**
      * Summarizes arbitrary user text to a concise output.
      *
      * @param userText Raw user text.
@@ -179,9 +257,12 @@ public class GeminiService {
             return cleanResponse(FALLBACK_RESPONSE);
         }
 
-        String prompt = "Summarize the following content clearly and concisely. "
-                + "Keep roughly 25 to 30 percent of the original length. "
-                + "Make sure the summary is coherent and reads naturally.\n\n"
+        String prompt = "Summarize the following content clearly and thoroughly. "
+                + "Keep roughly 35 to 45 percent of the original length, and never go below 200 words "
+                + "(unless the source is shorter than that). "
+                + "Write in flowing, well-developed paragraphs — minimum three paragraphs when the source is substantial. "
+                + "Preserve key names, numbers, quotes, and cause-and-effect. "
+                + "No bullet points, no headings, no markdown.\n\n"
                 + "Text:\n"
                 + userText;
 
@@ -379,6 +460,11 @@ public class GeminiService {
             setLastFailureReason(apiMessage.isEmpty()
                     ? "Gemini is temporarily overloaded (HTTP " + statusCode + ")."
                     : "Gemini is temporarily overloaded (HTTP " + statusCode + "): " + apiMessage);
+            printErrorBox(
+                    "ERROR: Gemini is temporarily overloaded (HTTP " + statusCode + ").",
+                    "Please try again in a moment.",
+                    apiMessage.isEmpty() ? "" : "Details: " + apiMessage
+            );
             return;
         }
 
