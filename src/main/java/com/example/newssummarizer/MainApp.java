@@ -10,7 +10,7 @@ public class MainApp extends Application {
     public static void main(String[] args) {
         launch(args);
     }
-
+//working 
     @Override
     public void start(Stage stage) throws Exception {
         DotEnvLoader.load();
