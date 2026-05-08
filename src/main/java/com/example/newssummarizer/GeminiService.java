@@ -47,7 +47,8 @@ public class GeminiService {
 
         this.lastFailureReason = "";
 
-        String configuredGeminiKey = System.getenv(GEMINI_API_KEY_ENV);
+        // Read from .env overrides first to avoid reflective env hacks on Java 25.
+        String configuredGeminiKey = DotEnvLoader.getEnv(GEMINI_API_KEY_ENV);
         if (configuredGeminiKey == null || configuredGeminiKey.trim().isEmpty()) {
             setLastFailureReason("GEMINI_API_KEY is missing.");
             printErrorBox(

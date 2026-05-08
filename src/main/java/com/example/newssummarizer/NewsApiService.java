@@ -43,7 +43,8 @@ public class NewsApiService {
                 .connectTimeout(Duration.ofSeconds(30))
                 .build();
 
-        String configuredNewsApiKey = System.getenv(NEWS_API_KEY_ENV);
+        // Read from .env overrides first to avoid reflective env hacks on Java 25.
+        String configuredNewsApiKey = DotEnvLoader.getEnv(NEWS_API_KEY_ENV);
         if (configuredNewsApiKey == null || configuredNewsApiKey.trim().isEmpty()) {
             printErrorBox(
                     "ERROR: NEWS_API_KEY is missing.",

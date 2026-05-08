@@ -1,13 +1,15 @@
 package com.example.newssummarizer;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
 public class DotEnvLoader {
+
+    // Store .env values safely for Java 25 without reflective env mutation.
+    private static final Map<String, String> DOT_ENV_OVERRIDES = new HashMap<>();
 
     public static void load() {
         Path envFile = Path.of(".env");
@@ -27,21 +29,22 @@ public class DotEnvLoader {
                 String val = line.substring(eq + 1).trim().replaceAll("^\"|\"$|^'|'$", "");
                 vars.put(key, val);
             }
-            injectIntoEnv(vars);
+            // Cache parsed values for lookup via getEnv().
+            DOT_ENV_OVERRIDES.putAll(vars);
         } catch (IOException e) {
             // silently skip — services will report missing keys
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private static void injectIntoEnv(Map<String, String> vars) {
-        try {
-            Map<String, String> env = System.getenv();
-            Field field = env.getClass().getDeclaredField("m");
-            field.setAccessible(true);
-            ((Map<String, String>) field.get(env)).putAll(vars);
-        } catch (Exception e) {
-            // reflection blocked — user must export vars manually
+    // Prefer .env overrides, fall back to real environment variables.
+    public static String getEnv(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            return null;
         }
+        String trimmedKey = key.trim();
+        if (DOT_ENV_OVERRIDES.containsKey(trimmedKey)) {
+            return DOT_ENV_OVERRIDES.get(trimmedKey);
+        }
+        return System.getenv(trimmedKey);
     }
 }

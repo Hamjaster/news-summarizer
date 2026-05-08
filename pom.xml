@@ -11,7 +11,8 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <javafx.version>21.0.5</javafx.version>
+        <!-- JavaFX 25.x aligns with Java 25 runtime support. -->
+        <javafx.version>25.0.3</javafx.version>
     </properties>
 
     <dependencies>
@@ -39,6 +40,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
                 <configuration>
+                    <!-- Keep bytecode aligned with the target Java version. -->
                     <release>25</release>
                 </configuration>
             </plugin>
